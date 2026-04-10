@@ -1,11 +1,23 @@
 ---
 name: ship
+preamble-tier: 4
+version: 1.0.0
 description: |
   Ship workflow: detect + merge base branch, run tests, review diff, bump VERSION,
   update CHANGELOG, commit, push, create PR. Use when asked to "ship", "deploy",
   "push to main", "create a PR", "merge and push", or "get it deployed".
   Proactively invoke this skill (do NOT push/PR directly) when the user says code
   is ready, asks about deploying, wants to push code up, or asks to create a PR. (nstack)
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Agent
+  - AskUserQuestion
+  - WebSearch
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
@@ -13,28 +25,21 @@ description: |
 ## Preamble (run first)
 
 ```bash
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_ROOT="$HOME/.codex/skills/nstack"
-[ -n "$_ROOT" ] && [ -d "$_ROOT/.agents/skills/nstack" ] && NSTACK_ROOT="$_ROOT/.agents/skills/nstack"
-NSTACK_BIN="$NSTACK_ROOT/bin"
-NSTACK_BROWSE="$NSTACK_ROOT/browse/dist"
-NSTACK_DESIGN="$NSTACK_ROOT/design/dist"
-NSTACK_RESEARCH="$NSTACK_ROOT/research/dist"
-_UPD=$($NSTACK_BIN/nstack-update-check 2>/dev/null || .agents/skills/nstack/bin/nstack-update-check 2>/dev/null || true)
+_UPD=$(~/.claude/skills/nstack/bin/nstack-update-check 2>/dev/null || .claude/skills/nstack/bin/nstack-update-check 2>/dev/null || true)
 [ -n "$_UPD" ] && echo "$_UPD" || true
 mkdir -p ~/.nstack/sessions
 touch ~/.nstack/sessions/"$PPID"
 _SESSIONS=$(find ~/.nstack/sessions -mmin -120 -type f 2>/dev/null | wc -l | tr -d ' ')
 find ~/.nstack/sessions -mmin +120 -type f -exec rm {} + 2>/dev/null || true
-_PROACTIVE=$($NSTACK_BIN/nstack-config get proactive 2>/dev/null || echo "true")
+_PROACTIVE=$(~/.claude/skills/nstack/bin/nstack-config get proactive 2>/dev/null || echo "true")
 _PROACTIVE_PROMPTED=$([ -f ~/.nstack/.proactive-prompted ] && echo "yes" || echo "no")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
-_SKILL_PREFIX=$($NSTACK_BIN/nstack-config get skill_prefix 2>/dev/null || echo "false")
+_SKILL_PREFIX=$(~/.claude/skills/nstack/bin/nstack-config get skill_prefix 2>/dev/null || echo "false")
 echo "PROACTIVE: $_PROACTIVE"
 echo "PROACTIVE_PROMPTED: $_PROACTIVE_PROMPTED"
 echo "SKILL_PREFIX: $_SKILL_PREFIX"
-source <($NSTACK_BIN/nstack-repo-mode 2>/dev/null) || true
+source <(~/.claude/skills/nstack/bin/nstack-repo-mode 2>/dev/null) || true
 REPO_MODE=${REPO_MODE:-unknown}
 echo "REPO_MODE: $REPO_MODE"
 _LAKE_SEEN=$([ -f ~/.nstack/.completeness-intro-seen ] && echo "yes" || echo "no")
@@ -42,27 +47,37 @@ echo "LAKE_INTRO: $_LAKE_SEEN"
 _TEL_START=$(date +%s)
 _SESSION_ID="$$-$(date +%s)"
 # Learnings count
-eval "$($NSTACK_BIN/nstack-slug 2>/dev/null)" 2>/dev/null || true
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" 2>/dev/null || true
 _LEARN_FILE="${NSTACK_HOME:-$HOME/.nstack}/projects/${SLUG:-unknown}/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
   if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
-    $NSTACK_BIN/nstack-learnings-search --limit 3 2>/dev/null || true
+    ~/.claude/skills/nstack/bin/nstack-learnings-search --limit 3 2>/dev/null || true
   fi
 else
   echo "LEARNINGS: 0"
 fi
 # Session timeline: record skill start (local-only, never sent anywhere)
-$NSTACK_BIN/nstack-timeline-log '{"skill":"ship","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+~/.claude/skills/nstack/bin/nstack-timeline-log '{"skill":"ship","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
 # Check if CLAUDE.md has routing rules
 _HAS_ROUTING="no"
 if [ -f CLAUDE.md ] && grep -q "## Skill routing" CLAUDE.md 2>/dev/null; then
   _HAS_ROUTING="yes"
 fi
-_ROUTING_DECLINED=$($NSTACK_BIN/nstack-config get routing_declined 2>/dev/null || echo "false")
+_ROUTING_DECLINED=$(~/.claude/skills/nstack/bin/nstack-config get routing_declined 2>/dev/null || echo "false")
 echo "HAS_ROUTING: $_HAS_ROUTING"
 echo "ROUTING_DECLINED: $_ROUTING_DECLINED"
+# Vendoring deprecation: detect if CWD has a vendored nstack copy
+_VENDORED="no"
+if [ -d ".claude/skills/nstack" ] && [ ! -L ".claude/skills/nstack" ]; then
+  if [ -f ".claude/skills/nstack/VERSION" ] || [ -d ".claude/skills/nstack/.git" ]; then
+    _VENDORED="yes"
+  fi
+fi
+echo "VENDORED_NSTACK: $_VENDORED"
+# Detect spawned session (OpenClaw or other orchestrator)
+[ -n "$OPENCLAW_SESSION" ] && echo "SPAWNED_SESSION: true" || true
 ```
 
 If `PROACTIVE` is `"false"`, do not proactively suggest nstack skills AND do not
@@ -74,9 +89,9 @@ The user opted out of proactive behavior.
 If `SKILL_PREFIX` is `"true"`, the user has namespaced skill names. When suggesting
 or invoking other nstack skills, use the `/nstack-` prefix (e.g., `/nstack-qa` instead
 of `/qa`, `/nstack-ship` instead of `/ship`). Disk paths are unaffected — always use
-`$NSTACK_ROOT/[skill-name]/SKILL.md` for reading skill files.
+`~/.claude/skills/nstack/[skill-name]/SKILL.md` for reading skill files.
 
-If output shows `UPGRADE_AVAILABLE <old> <new>`: read `$NSTACK_ROOT/nstack-upgrade/SKILL.md` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If `JUST_UPGRADED <from> <to>`: tell user "Running nstack v{to} (just updated!)" and continue.
+If output shows `UPGRADE_AVAILABLE <old> <new>`: read `~/.claude/skills/nstack/nstack-upgrade/SKILL.md` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If `JUST_UPGRADED <from> <to>`: tell user "Running nstack v{to} (just updated!)" and continue.
 
 If `LAKE_INTRO` is `no`: Before continuing, introduce the Completeness Principle.
 Tell the user: "nstack follows the **Boil the Lake** principle — always do the complete
@@ -99,8 +114,8 @@ Options:
 - A) Keep it on (recommended)
 - B) Turn it off — I'll type /commands myself
 
-If A: run `$NSTACK_BIN/nstack-config set proactive true`
-If B: run `$NSTACK_BIN/nstack-config set proactive false`
+If A: run `~/.claude/skills/nstack/bin/nstack-config set proactive true`
+If B: run `~/.claude/skills/nstack/bin/nstack-config set proactive false`
 
 Always run:
 ```bash
@@ -149,10 +164,49 @@ Key routing rules:
 
 Then commit the change: `git add CLAUDE.md && git commit -m "chore: add nstack skill routing rules to CLAUDE.md"`
 
-If B: run `$NSTACK_BIN/nstack-config set routing_declined true`
+If B: run `~/.claude/skills/nstack/bin/nstack-config set routing_declined true`
 Say "No problem. You can add routing rules later by running `nstack-config set routing_declined false` and re-running any skill."
 
 This only happens once per project. If `HAS_ROUTING` is `yes` or `ROUTING_DECLINED` is `true`, skip this entirely.
+
+If `VENDORED_NSTACK` is `yes`: This project has a vendored copy of nstack at
+`.claude/skills/nstack/`. Vendoring is deprecated. We will not keep vendored copies
+up to date, so this project's nstack will fall behind.
+
+Use AskUserQuestion (one-time per project, check for `~/.nstack/.vendoring-warned-$SLUG` marker):
+
+> This project has nstack vendored in `.claude/skills/nstack/`. Vendoring is deprecated.
+> We won't keep this copy up to date, so you'll fall behind on new features and fixes.
+>
+> Want to migrate to team mode? It takes about 30 seconds.
+
+Options:
+- A) Yes, migrate to team mode now
+- B) No, I'll handle it myself
+
+If A:
+1. Run `git rm -r .claude/skills/nstack/`
+2. Run `echo '.claude/skills/nstack/' >> .gitignore`
+3. Run `~/.claude/skills/nstack/bin/nstack-team-init required` (or `optional`)
+4. Run `git add .claude/ .gitignore CLAUDE.md && git commit -m "chore: migrate nstack from vendored to team mode"`
+5. Tell the user: "Done. Each developer now runs: `cd ~/.claude/skills/nstack && ./setup --team`"
+
+If B: say "OK, you're on your own to keep the vendored copy up to date."
+
+Always run (regardless of choice):
+```bash
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" 2>/dev/null || true
+touch ~/.nstack/.vendoring-warned-${SLUG:-unknown}
+```
+
+This only happens once per project. If the marker file exists, skip entirely.
+
+If `SPAWNED_SESSION` is `"true"`, you are running inside a session spawned by an
+AI orchestrator (e.g., OpenClaw). In spawned sessions:
+- Do NOT use AskUserQuestion for interactive prompts. Auto-choose the recommended option.
+- Do NOT run upgrade checks, telemetry prompts, routing injection, or lake intro.
+- Focus on completing the task and reporting results via prose output.
+- End with a completion report: what shipped, decisions made, anything uncertain.
 
 ## Voice
 
@@ -206,7 +260,7 @@ After compaction or at session start, check for recent project artifacts.
 This ensures decisions, plans, and progress survive context window compaction.
 
 ```bash
-eval "$($NSTACK_BIN/nstack-slug 2>/dev/null)"
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
 _PROJ="${NSTACK_HOME:-$HOME/.nstack}/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
@@ -282,7 +336,7 @@ Always flag anything that looks wrong — one sentence, what you noticed and its
 
 ## Search Before Building
 
-Before building anything unfamiliar, **search first.** See `$NSTACK_ROOT/ETHOS.md`.
+Before building anything unfamiliar, **search first.** See `~/.claude/skills/nstack/ETHOS.md`.
 - **Layer 1** (tried and true) — don't reinvent. **Layer 2** (new and popular) — scrutinize. **Layer 3** (first principles) — prize above all.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:
@@ -326,7 +380,7 @@ Before completing, reflect on this session:
 If yes, log an operational learning for future sessions:
 
 ```bash
-$NSTACK_BIN/nstack-learnings-log '{"skill":"SKILL_NAME","type":"operational","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"observed"}'
+~/.claude/skills/nstack/bin/nstack-learnings-log '{"skill":"SKILL_NAME","type":"operational","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"observed"}'
 ```
 
 Replace SKILL_NAME with the current skill name. Only log genuine operational discoveries.
@@ -349,7 +403,7 @@ Run this bash:
 _TEL_END=$(date +%s)
 _TEL_DUR=$(( _TEL_END - _TEL_START ))
 # Session timeline: record skill completion (local-only, never sent anywhere)
-$NSTACK_ROOT/bin/nstack-timeline-log '{"skill":"SKILL_NAME","event":"completed","branch":"'$(git branch --show-current 2>/dev/null || echo unknown)'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
+~/.claude/skills/nstack/bin/nstack-timeline-log '{"skill":"SKILL_NAME","event":"completed","branch":"'$(git branch --show-current 2>/dev/null || echo unknown)'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
 ```
 
 Replace `SKILL_NAME` with the actual skill name from frontmatter, `OUTCOME` with
@@ -404,7 +458,7 @@ When you are in plan mode and about to call ExitPlanMode:
 3. If it does NOT — run this command:
 
 \`\`\`bash
-$NSTACK_ROOT/bin/nstack-review-read
+~/.claude/skills/nstack/bin/nstack-review-read
 \`\`\`
 
 Then write a `## NSTACK REVIEW REPORT` section to the end of the plan file:
@@ -498,6 +552,16 @@ You are running the `/ship` workflow. This is a **non-interactive, fully automat
 - Auto-fixable review findings (dead code, N+1, stale comments — fixed automatically)
 - Test coverage gaps within target threshold (auto-generate and commit, or flag in PR body)
 
+**Re-run behavior (idempotency):**
+Re-running `/ship` means "run the whole checklist again." Every verification step
+(tests, coverage audit, plan completion, pre-landing review, adversarial review,
+VERSION/CHANGELOG check, TODOS, document-release) runs on every invocation.
+Only *actions* are idempotent:
+- Step 4: If VERSION already bumped, skip the bump but still read the version
+- Step 7: If already pushed, skip the push command
+- Step 8: If PR exists, update the body instead of creating a new PR
+Never skip a verification step because a prior `/ship` run already performed it.
+
 ---
 
 ## Step 1: Pre-flight
@@ -515,7 +579,7 @@ You are running the `/ship` workflow. This is a **non-interactive, fully automat
 After completing the review, read the review log and config to display the dashboard.
 
 ```bash
-$NSTACK_ROOT/bin/nstack-review-read
+~/.claude/skills/nstack/bin/nstack-review-read
 ```
 
 Parse the output. Find the most recent entry for each skill (plan-ceo-review, plan-eng-review, review, plan-design-review, design-review-lite, adversarial-review, codex-review, codex-plan-review). Ignore entries with timestamps older than 7 days. For the Eng Review row, show whichever is more recent between `review` (diff-scoped pre-landing review) and `plan-eng-review` (plan-stage architecture review). Append "(DIFF)" or "(PLAN)" to the status to distinguish. For the Adversarial row, show whichever is more recent between `adversarial-review` (new auto-scaled) and `codex-review` (legacy). For Design Review, show whichever is more recent between `plan-design-review` (full visual audit) and `design-review-lite` (code-level check). Append "(FULL)" or "(LITE)" to the status to distinguish. For the Outside Voice row, show the most recent `codex-plan-review` entry — this captures outside voices from both /plan-ceo-review and /plan-eng-review.
@@ -569,7 +633,7 @@ Check diff size: `git diff <base>...HEAD --stat | tail -1`. If the diff is >200 
 
 If CEO Review is missing, mention as informational ("CEO Review not run — recommended for product changes") but do NOT block.
 
-For Design Review: run `source <($NSTACK_ROOT/bin/nstack-diff-scope <base> 2>/dev/null)`. If `SCOPE_FRONTEND=true` and no design review (plan-design-review or design-review-lite) exists in the dashboard, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 3.5, but consider running /design-review for a full visual audit post-implementation." Still never block.
+For Design Review: run `source <(~/.claude/skills/nstack/bin/nstack-diff-scope <base> 2>/dev/null)`. If `SCOPE_FRONTEND=true` and no design review (plan-design-review or design-review-lite) exists in the dashboard, mention: "Design Review not run — this PR changes frontend code. The lite design check will run automatically in Step 3.5, but consider running /design-review for a full visual audit post-implementation." Still never block.
 
 Continue to Step 1.5 — do NOT block or ask. Ship runs its own review in Step 3.5.
 
@@ -861,7 +925,7 @@ Use AskUserQuestion:
 - Continue with the workflow.
 
 **If "Add as P0 TODO":**
-- If `TODOS.md` exists, add the entry following the format in `review/TODOS-format.md` (or `.agents/skills/nstack/review/TODOS-format.md`).
+- If `TODOS.md` exists, add the entry following the format in `review/TODOS-format.md` (or `.claude/skills/review/TODOS-format.md`).
 - If `TODOS.md` does not exist, create it with the standard header and add the entry.
 - Entry should include: title, the error output, which branch it was noticed on, and priority P0.
 - Continue with the workflow — treat the pre-existing failure as non-blocking.
@@ -1199,7 +1263,7 @@ Using the coverage percentage from the diagram in substep 4 (the `COVERAGE: X/Y 
 After producing the coverage diagram, write a test plan artifact so `/qa` and `/qa-only` can consume it:
 
 ```bash
-eval "$($NSTACK_ROOT/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
@@ -1408,14 +1472,41 @@ Add a `## Verification Results` section to the PR body (Step 8):
 
 ## Prior Learnings
 
-Search for relevant learnings from previous sessions on this project:
+Search for relevant learnings from previous sessions:
 
 ```bash
-$NSTACK_BIN/nstack-learnings-search --limit 10 2>/dev/null || true
+_CROSS_PROJ=$(~/.claude/skills/nstack/bin/nstack-config get cross_project_learnings 2>/dev/null || echo "unset")
+echo "CROSS_PROJECT: $_CROSS_PROJ"
+if [ "$_CROSS_PROJ" = "true" ]; then
+  ~/.claude/skills/nstack/bin/nstack-learnings-search --limit 10 --cross-project 2>/dev/null || true
+else
+  ~/.claude/skills/nstack/bin/nstack-learnings-search --limit 10 2>/dev/null || true
+fi
 ```
 
+If `CROSS_PROJECT` is `unset` (first time): Use AskUserQuestion:
+
+> nstack can search learnings from your other projects on this machine to find
+> patterns that might apply here. This stays local (no data leaves your machine).
+> Recommended for solo developers. Skip if you work on multiple client codebases
+> where cross-contamination would be a concern.
+
+Options:
+- A) Enable cross-project learnings (recommended)
+- B) Keep learnings project-scoped only
+
+If A: run `~/.claude/skills/nstack/bin/nstack-config set cross_project_learnings true`
+If B: run `~/.claude/skills/nstack/bin/nstack-config set cross_project_learnings false`
+
+Then re-run the search with the appropriate flag.
+
 If learnings are found, incorporate them into your analysis. When a review finding
-matches a past learning, note it: "Prior learning applied: [key] (confidence N, from [date])"
+matches a past learning, display:
+
+**"Prior learning applied: [key] (confidence N/10, from [date])"**
+
+This makes the compounding visible. The user should see that nstack is getting
+smarter on their codebase over time.
 
 ## Step 3.48: Scope Drift Detection
 
@@ -1458,7 +1549,7 @@ Before reviewing code quality, check: **did they build what was requested — no
 
 Review the diff for structural issues that tests don't catch.
 
-1. Read `.agents/skills/nstack/review/checklist.md`. If the file cannot be read, **STOP** and report the error.
+1. Read `.claude/skills/review/checklist.md`. If the file cannot be read, **STOP** and report the error.
 
 2. Run `git diff origin/<base>` to get the full diff (scoped to feature changes against the freshly-fetched base branch).
 
@@ -1496,7 +1587,7 @@ higher confidence.
 Check if the diff touches frontend files using `nstack-diff-scope`:
 
 ```bash
-source <($NSTACK_BIN/nstack-diff-scope <base> 2>/dev/null)
+source <(~/.claude/skills/nstack/bin/nstack-diff-scope <base> 2>/dev/null)
 ```
 
 **If `SCOPE_FRONTEND=false`:** Skip design review silently. No output.
@@ -1505,7 +1596,7 @@ source <($NSTACK_BIN/nstack-diff-scope <base> 2>/dev/null)
 
 1. **Check for DESIGN.md.** If `DESIGN.md` or `design-system.md` exists in the repo root, read it. All design findings are calibrated against it — patterns blessed in DESIGN.md are not flagged. If not found, use universal design principles.
 
-2. **Read `.agents/skills/nstack/review/design-checklist.md`.** If the file cannot be read, skip design review with a note: "Design checklist not found — skipping design review."
+2. **Read `.claude/skills/review/design-checklist.md`.** If the file cannot be read, skip design review with a note: "Design checklist not found — skipping design review."
 
 3. **Read each changed frontend file** (full file, not just diff hunks). Frontend files are identified by the patterns listed in the checklist.
 
@@ -1519,14 +1610,274 @@ source <($NSTACK_BIN/nstack-diff-scope <base> 2>/dev/null)
 6. **Log the result** for the Review Readiness Dashboard:
 
 ```bash
-$NSTACK_BIN/nstack-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
+~/.claude/skills/nstack/bin/nstack-review-log '{"skill":"design-review-lite","timestamp":"TIMESTAMP","status":"STATUS","findings":N,"auto_fixed":M,"commit":"COMMIT"}'
 ```
 
 Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "issues_found", N = total findings, M = auto-fixed count, COMMIT = output of `git rev-parse --short HEAD`.
 
+7. **Codex design voice** (optional, automatic if available):
+
+```bash
+which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+```
+
+If Codex is available, run a lightweight design check on the diff:
+
+```bash
+TMPERR_DRL=$(mktemp /tmp/codex-drl-XXXXXXXX)
+_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
+codex exec "Review the git diff on this branch. Run 7 litmus checks (YES/NO each): 1. Brand/product unmistakable in first screen? 2. One strong visual anchor present? 3. Page understandable by scanning headlines only? 4. Each section has one job? 5. Are cards actually necessary? 6. Does motion improve hierarchy or atmosphere? 7. Would design feel premium with all decorative shadows removed? Flag any hard rejections: 1. Generic SaaS card grid as first impression 2. Beautiful image with weak brand 3. Strong headline with no clear action 4. Busy imagery behind text 5. Sections repeating same mood statement 6. Carousel with no narrative purpose 7. App UI made of stacked cards instead of layout 5 most important design findings only. Reference file:line." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR_DRL"
+```
+
+Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
+```bash
+cat "$TMPERR_DRL" && rm -f "$TMPERR_DRL"
+```
+
+**Error handling:** All errors are non-blocking. On auth failure, timeout, or empty response — skip with a brief note and continue.
+
+Present Codex output under a `CODEX (design):` header, merged with the checklist findings above.
+
    Include any design findings alongside the code review findings. They follow the same Fix-First flow below.
 
-4. **Classify each finding as AUTO-FIX or ASK** per the Fix-First Heuristic in
+## Step 3.55: Review Army — Specialist Dispatch
+
+### Detect stack and scope
+
+```bash
+source <(~/.claude/skills/nstack/bin/nstack-diff-scope <base> 2>/dev/null) || true
+# Detect stack for specialist context
+STACK=""
+[ -f Gemfile ] && STACK="${STACK}ruby "
+[ -f package.json ] && STACK="${STACK}node "
+[ -f requirements.txt ] || [ -f pyproject.toml ] && STACK="${STACK}python "
+[ -f go.mod ] && STACK="${STACK}go "
+[ -f Cargo.toml ] && STACK="${STACK}rust "
+echo "STACK: ${STACK:-unknown}"
+DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+DIFF_LINES=$((DIFF_INS + DIFF_DEL))
+echo "DIFF_LINES: $DIFF_LINES"
+# Detect test framework for specialist test stub generation
+TEST_FW=""
+{ [ -f jest.config.ts ] || [ -f jest.config.js ]; } && TEST_FW="jest"
+[ -f vitest.config.ts ] && TEST_FW="vitest"
+{ [ -f spec/spec_helper.rb ] || [ -f .rspec ]; } && TEST_FW="rspec"
+{ [ -f pytest.ini ] || [ -f conftest.py ]; } && TEST_FW="pytest"
+[ -f go.mod ] && TEST_FW="go-test"
+echo "TEST_FW: ${TEST_FW:-unknown}"
+```
+
+### Read specialist hit rates (adaptive gating)
+
+```bash
+~/.claude/skills/nstack/bin/nstack-specialist-stats 2>/dev/null || true
+```
+
+### Select specialists
+
+Based on the scope signals above, select which specialists to dispatch.
+
+**Always-on (dispatch on every review with 50+ changed lines):**
+1. **Testing** — read `~/.claude/skills/nstack/review/specialists/testing.md`
+2. **Maintainability** — read `~/.claude/skills/nstack/review/specialists/maintainability.md`
+
+**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to the Fix-First flow (item 4).
+
+**Conditional (dispatch if the matching scope signal is true):**
+3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `~/.claude/skills/nstack/review/specialists/security.md`
+4. **Performance** — if SCOPE_BACKEND=true OR SCOPE_FRONTEND=true. Read `~/.claude/skills/nstack/review/specialists/performance.md`
+5. **Data Migration** — if SCOPE_MIGRATIONS=true. Read `~/.claude/skills/nstack/review/specialists/data-migration.md`
+6. **API Contract** — if SCOPE_API=true. Read `~/.claude/skills/nstack/review/specialists/api-contract.md`
+7. **Design** — if SCOPE_FRONTEND=true. Use the existing design review checklist at `~/.claude/skills/nstack/review/design-checklist.md`
+
+### Adaptive gating
+
+After scope-based selection, apply adaptive gating based on specialist hit rates:
+
+For each conditional specialist that passed scope gating, check the `nstack-specialist-stats` output above:
+- If tagged `[GATE_CANDIDATE]` (0 findings in 10+ dispatches): skip it. Print: "[specialist] auto-gated (0 findings in N reviews)."
+- If tagged `[NEVER_GATE]`: always dispatch regardless of hit rate. Security and data-migration are insurance policy specialists — they should run even when silent.
+
+**Force flags:** If the user's prompt includes `--security`, `--performance`, `--testing`, `--maintainability`, `--data-migration`, `--api-contract`, `--design`, or `--all-specialists`, force-include that specialist regardless of gating.
+
+Note which specialists were selected, gated, and skipped. Print the selection:
+"Dispatching N specialists: [names]. Skipped: [names] (scope not detected). Gated: [names] (0 findings in N+ reviews)."
+
+---
+
+### Dispatch specialists in parallel
+
+For each selected specialist, launch an independent subagent via the Agent tool.
+**Launch ALL selected specialists in a single message** (multiple Agent tool calls)
+so they run in parallel. Each subagent has fresh context — no prior review bias.
+
+**Each specialist subagent prompt:**
+
+Construct the prompt for each specialist. The prompt includes:
+
+1. The specialist's checklist content (you already read the file above)
+2. Stack context: "This is a {STACK} project."
+3. Past learnings for this domain (if any exist):
+
+```bash
+~/.claude/skills/nstack/bin/nstack-learnings-search --type pitfall --query "{specialist domain}" --limit 5 2>/dev/null || true
+```
+
+If learnings are found, include them: "Past learnings for this domain: {learnings}"
+
+4. Instructions:
+
+"You are a specialist code reviewer. Read the checklist below, then run
+`git diff origin/<base>` to get the full diff. Apply the checklist against the diff.
+
+For each finding, output a JSON object on its own line:
+{\"severity\":\"CRITICAL|INFORMATIONAL\",\"confidence\":N,\"path\":\"file\",\"line\":N,\"category\":\"category\",\"summary\":\"description\",\"fix\":\"recommended fix\",\"fingerprint\":\"path:line:category\",\"specialist\":\"name\"}
+
+Required fields: severity, confidence, path, category, summary, specialist.
+Optional: line, fix, fingerprint, evidence, test_stub.
+
+If you can write a test that would catch this issue, include it in the `test_stub` field.
+Use the detected test framework ({TEST_FW}). Write a minimal skeleton — describe/it/test
+blocks with clear intent. Skip test_stub for architectural or design-only findings.
+
+If no findings: output `NO FINDINGS` and nothing else.
+Do not output anything else — no preamble, no summary, no commentary.
+
+Stack context: {STACK}
+Past learnings: {learnings or 'none'}
+
+CHECKLIST:
+{checklist content}"
+
+**Subagent configuration:**
+- Use `subagent_type: "general-purpose"`
+- Do NOT use `run_in_background` — all specialists must complete before merge
+- If any specialist subagent fails or times out, log the failure and continue with results from successful specialists. Specialists are additive — partial results are better than no results.
+
+---
+
+### Step 3.56: Collect and merge findings
+
+After all specialist subagents complete, collect their outputs.
+
+**Parse findings:**
+For each specialist's output:
+1. If output is "NO FINDINGS" — skip, this specialist found nothing
+2. Otherwise, parse each line as a JSON object. Skip lines that are not valid JSON.
+3. Collect all parsed findings into a single list, tagged with their specialist name.
+
+**Fingerprint and deduplicate:**
+For each finding, compute its fingerprint:
+- If `fingerprint` field is present, use it
+- Otherwise: `{path}:{line}:{category}` (if line is present) or `{path}:{category}`
+
+Group findings by fingerprint. For findings sharing the same fingerprint:
+- Keep the finding with the highest confidence score
+- Tag it: "MULTI-SPECIALIST CONFIRMED ({specialist1} + {specialist2})"
+- Boost confidence by +1 (cap at 10)
+- Note the confirming specialists in the output
+
+**Apply confidence gates:**
+- Confidence 7+: show normally in the findings output
+- Confidence 5-6: show with caveat "Medium confidence — verify this is actually an issue"
+- Confidence 3-4: move to appendix (suppress from main findings)
+- Confidence 1-2: suppress entirely
+
+**Compute PR Quality Score:**
+After merging, compute the quality score:
+`quality_score = max(0, 10 - (critical_count * 2 + informational_count * 0.5))`
+Cap at 10. Log this in the review result at the end.
+
+**Output merged findings:**
+Present the merged findings in the same format as the current review:
+
+```
+SPECIALIST REVIEW: N findings (X critical, Y informational) from Z specialists
+
+[For each finding, in order: CRITICAL first, then INFORMATIONAL, sorted by confidence descending]
+[SEVERITY] (confidence: N/10, specialist: name) path:line — summary
+  Fix: recommended fix
+  [If MULTI-SPECIALIST CONFIRMED: show confirmation note]
+
+PR Quality Score: X/10
+```
+
+These findings flow into the Fix-First flow (item 4) alongside the checklist pass (Step 3.5).
+The Fix-First heuristic applies identically — specialist findings follow the same AUTO-FIX vs ASK classification.
+
+**Compile per-specialist stats:**
+After merging findings, compile a `specialists` object for the review-log persist.
+For each specialist (testing, maintainability, security, performance, data-migration, api-contract, design, red-team):
+- If dispatched: `{"dispatched": true, "findings": N, "critical": N, "informational": N}`
+- If skipped by scope: `{"dispatched": false, "reason": "scope"}`
+- If skipped by gating: `{"dispatched": false, "reason": "gated"}`
+- If not applicable (e.g., red-team not activated): omit from the object
+
+Include the Design specialist even though it uses `design-checklist.md` instead of the specialist schema files.
+Remember these stats — you will need them for the review-log entry in Step 5.8.
+
+---
+
+### Red Team dispatch (conditional)
+
+**Activation:** Only if DIFF_LINES > 200 OR any specialist produced a CRITICAL finding.
+
+If activated, dispatch one more subagent via the Agent tool (foreground, not background).
+
+The Red Team subagent receives:
+1. The red-team checklist from `~/.claude/skills/nstack/review/specialists/red-team.md`
+2. The merged specialist findings from Step 3.56 (so it knows what was already caught)
+3. The git diff command
+
+Prompt: "You are a red team reviewer. The code has already been reviewed by N specialists
+who found the following issues: {merged findings summary}. Your job is to find what they
+MISSED. Read the checklist, run `git diff origin/<base>`, and look for gaps.
+Output findings as JSON objects (same schema as the specialists). Focus on cross-cutting
+concerns, integration boundary issues, and failure modes that specialist checklists
+don't cover."
+
+If the Red Team finds additional issues, merge them into the findings list before
+the Fix-First flow (item 4). Red Team findings are tagged with `"specialist":"red-team"`.
+
+If the Red Team returns NO FINDINGS, note: "Red Team review: no additional issues found."
+If the Red Team subagent fails or times out, skip silently and continue.
+
+### Step 3.57: Cross-review finding dedup
+
+Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
+
+```bash
+~/.claude/skills/nstack/bin/nstack-review-read
+```
+
+Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
+
+For each JSONL entry that has a `findings` array:
+1. Collect all fingerprints where `action: "skipped"`
+2. Note the `commit` field from that entry
+
+If skipped fingerprints exist, get the list of files changed since that review:
+
+```bash
+git diff --name-only <prior-review-commit> HEAD
+```
+
+For each current finding (from both the checklist pass (Step 3.5) and specialist review (Step 3.55-3.56)), check:
+- Does its fingerprint match a previously skipped finding?
+- Is the finding's file path NOT in the changed-files set?
+
+If both conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+
+Print: "Suppressed N findings from prior reviews (previously skipped by user)"
+
+**Only suppress `skipped` findings — never `fixed` or `auto-fixed`** (those might regress and should be re-checked).
+
+If no prior reviews exist or none have a `findings` array, skip this step silently.
+
+Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`
+
+4. **Classify each finding from both the checklist pass and specialist review (Step 3.55-3.56) as AUTO-FIX or ASK** per the Fix-First Heuristic in
    checklist.md. Critical findings lean toward ASK; informational lean toward AUTO-FIX.
 
 5. **Auto-fix all AUTO-FIX items.** Apply each fix. Output one line per fix:
@@ -1548,10 +1899,13 @@ Substitute: TIMESTAMP = ISO 8601 datetime, STATUS = "clean" if 0 findings or "is
 
 9. Persist the review result to the review log:
 ```bash
-$NSTACK_ROOT/bin/nstack-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
+~/.claude/skills/nstack/bin/nstack-review-log '{"skill":"review","timestamp":"TIMESTAMP","status":"STATUS","issues_found":N,"critical":N,"informational":N,"quality_score":SCORE,"specialists":SPECIALISTS_JSON,"findings":FINDINGS_JSON,"commit":"'"$(git rev-parse --short HEAD)"'","via":"ship"}'
 ```
 Substitute TIMESTAMP (ISO 8601), STATUS ("clean" if no issues, "issues_found" otherwise),
 and N values from the summary counts above. The `via:"ship"` distinguishes from standalone `/review` runs.
+- `quality_score` = the PR Quality Score computed in Step 3.56 (e.g., 7.5). If specialists were skipped (small diff), use `10.0`
+- `specialists` = the per-specialist stats object compiled in Step 3.56. Each specialist that was considered gets an entry: `{"dispatched":true/false,"findings":N,"critical":N,"informational":N}` if dispatched, or `{"dispatched":false,"reason":"scope|gated"}` if skipped. Example: `{"testing":{"dispatched":true,"findings":2,"critical":0,"informational":2},"security":{"dispatched":false,"reason":"scope"}}`
+- `findings` = array of per-finding records. For each finding (from checklist pass and specialists), include: `{"fingerprint":"path:line:category","severity":"CRITICAL|INFORMATIONAL","action":"ACTION"}`. ACTION is `"auto-fixed"`, `"fixed"` (user approved), or `"skipped"` (user chose Skip).
 
 Save the review output — it goes into the PR body in Step 8.
 
@@ -1559,7 +1913,7 @@ Save the review output — it goes into the PR body in Step 8.
 
 ## Step 3.75: Address Greptile review comments (if PR exists)
 
-Read `.agents/skills/nstack/review/greptile-triage.md` and follow the fetch, filter, classify, and **escalation detection** steps.
+Read `.claude/skills/review/greptile-triage.md` and follow the fetch, filter, classify, and **escalation detection** steps.
 
 **If no PR exists, `gh` fails, API returns an error, or there are zero Greptile comments:** Skip this step silently. Continue to Step 4.
 
@@ -1596,7 +1950,130 @@ For each classified comment:
 
 ---
 
+## Step 3.8: Adversarial review (always-on)
 
+Every diff gets adversarial review from both Claude and Codex. LOC is not a proxy for risk — a 5-line auth change can be critical.
+
+**Detect diff size and tool availability:**
+
+```bash
+DIFF_INS=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DEL=$(git diff origin/<base> --stat | tail -1 | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+DIFF_TOTAL=$((DIFF_INS + DIFF_DEL))
+which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+# Legacy opt-out — only gates Codex passes, Claude always runs
+OLD_CFG=$(~/.claude/skills/nstack/bin/nstack-config get codex_reviews 2>/dev/null || true)
+echo "DIFF_SIZE: $DIFF_TOTAL"
+echo "OLD_CFG: ${OLD_CFG:-not_set}"
+```
+
+If `OLD_CFG` is `disabled`: skip Codex passes only. Claude adversarial subagent still runs (it's free and fast). Jump to the "Claude adversarial subagent" section.
+
+**User override:** If the user explicitly requested "full review", "structured review", or "P1 gate", also run the Codex structured review regardless of diff size.
+
+---
+
+### Claude adversarial subagent (always runs)
+
+Dispatch via the Agent tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
+
+Subagent prompt:
+"Read the diff for this branch with `git diff origin/<base>`. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment)."
+
+Present findings under an `ADVERSARIAL REVIEW (Claude subagent):` header. **FIXABLE findings** flow into the same Fix-First pipeline as the structured review. **INVESTIGATE findings** are presented as informational.
+
+If the subagent fails or times out: "Claude adversarial subagent unavailable. Continuing."
+
+---
+
+### Codex adversarial challenge (always runs when available)
+
+If Codex is available AND `OLD_CFG` is NOT `disabled`:
+
+```bash
+TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
+_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
+codex exec "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the changes on this branch against the base branch. Run git diff origin/<base> to see the diff. Your job is to find ways this code will fail in production. Think like an attacker and a chaos engineer. Find edge cases, race conditions, security holes, resource leaks, failure modes, and silent data corruption paths. Be adversarial. Be thorough. No compliments — just the problems." -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR_ADV"
+```
+
+Set the Bash tool's `timeout` parameter to `300000` (5 minutes). Do NOT use the `timeout` shell command — it doesn't exist on macOS. After the command completes, read stderr:
+```bash
+cat "$TMPERR_ADV"
+```
+
+Present the full output verbatim. This is informational — it never blocks shipping.
+
+**Error handling:** All errors are non-blocking — adversarial review is a quality enhancement, not a prerequisite.
+- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate."
+- **Timeout:** "Codex timed out after 5 minutes."
+- **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
+
+**Cleanup:** Run `rm -f "$TMPERR_ADV"` after processing.
+
+If Codex is NOT available: "Codex CLI not found — running Claude adversarial only. Install Codex for cross-model coverage: `npm install -g @openai/codex`"
+
+---
+
+### Codex structured review (large diffs only, 200+ lines)
+
+If `DIFF_TOTAL >= 200` AND Codex is available AND `OLD_CFG` is NOT `disabled`:
+
+```bash
+TMPERR=$(mktemp /tmp/codex-review-XXXXXXXX)
+_REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
+cd "$_REPO_ROOT"
+codex review "IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.\n\nReview the diff against the base branch." --base <base> -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR"
+```
+
+Set the Bash tool's `timeout` parameter to `300000` (5 minutes). Do NOT use the `timeout` shell command — it doesn't exist on macOS. Present output under `CODEX SAYS (code review):` header.
+Check for `[P1]` markers: found → `GATE: FAIL`, not found → `GATE: PASS`.
+
+If GATE is FAIL, use AskUserQuestion:
+```
+Codex found N critical issues in the diff.
+
+A) Investigate and fix now (recommended)
+B) Continue — review will still complete
+```
+
+If A: address the findings. After fixing, re-run tests (Step 3) since code has changed. Re-run `codex review` to verify.
+
+Read stderr for errors (same error handling as Codex adversarial above).
+
+After stderr: `rm -f "$TMPERR"`
+
+If `DIFF_TOTAL < 200`: skip this section silently. The Claude + Codex adversarial passes provide sufficient coverage for smaller diffs.
+
+---
+
+### Persist the review result
+
+After all passes complete, persist:
+```bash
+~/.claude/skills/nstack/bin/nstack-review-log '{"skill":"adversarial-review","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"STATUS","source":"SOURCE","tier":"always","gate":"GATE","commit":"'"$(git rev-parse --short HEAD)"'"}'
+```
+Substitute: STATUS = "clean" if no findings across ALL passes, "issues_found" if any pass found issues. SOURCE = "both" if Codex ran, "claude" if only Claude subagent ran. GATE = the Codex structured review gate result ("pass"/"fail"), "skipped" if diff < 200, or "informational" if Codex was unavailable. If all passes failed, do NOT persist.
+
+---
+
+### Cross-model synthesis
+
+After all passes complete, synthesize findings across all sources:
+
+```
+ADVERSARIAL REVIEW SYNTHESIS (always-on, N lines):
+════════════════════════════════════════════════════════════
+  High confidence (found by multiple sources): [findings agreed on by >1 pass]
+  Unique to Claude structured review: [from earlier step]
+  Unique to Claude adversarial: [from subagent]
+  Unique to Codex: [from codex adversarial or code review, if ran]
+  Models used: Claude structured ✓  Claude adversarial ✓/✗  Codex ✓/✗
+════════════════════════════════════════════════════════════
+```
+
+High-confidence findings (agreed on by multiple sources) should be prioritized for fixes.
+
+---
 
 ## Capture Learnings
 
@@ -1604,7 +2081,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-$NSTACK_BIN/nstack-learnings-log '{"skill":"ship","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.claude/skills/nstack/bin/nstack-learnings-log '{"skill":"ship","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`
@@ -1634,7 +2111,7 @@ echo "BASE: $BASE_VERSION  HEAD: $CURRENT_VERSION"
 if [ "$CURRENT_VERSION" != "$BASE_VERSION" ]; then echo "ALREADY_BUMPED"; fi
 ```
 
-If output shows `ALREADY_BUMPED`, VERSION was already bumped on this branch (prior `/ship` run). Skip the rest of Step 4 and use the current VERSION. Otherwise proceed with the bump.
+If output shows `ALREADY_BUMPED`, VERSION was already bumped on this branch (prior `/ship` run). Skip the bump action (do not modify VERSION), but read the current VERSION value — it is needed for CHANGELOG and PR body. Continue to the next step. Otherwise proceed with the bump.
 
 1. Read the current `VERSION` file (4-digit format: `MAJOR.MINOR.PATCH.MICRO`)
 
@@ -1702,7 +2179,7 @@ If output shows `ALREADY_BUMPED`, VERSION was already bumped on this branch (pri
 
 Cross-reference the project's TODOS.md against the changes being shipped. Mark completed items automatically; prompt only if the file is missing or disorganized.
 
-Read `.agents/skills/nstack/review/TODOS-format.md` for the canonical format reference.
+Read `.claude/skills/review/TODOS-format.md` for the canonical format reference.
 
 **1. Check if TODOS.md exists** in the repository root.
 
@@ -1784,7 +2261,7 @@ Save this summary — it goes into the PR body in Step 8.
 git commit -m "$(cat <<'EOF'
 chore: bump version and changelog (vX.Y.Z.W)
 
-Co-Authored-By: OpenAI Codex <noreply@openai.com>
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -1825,7 +2302,7 @@ echo "LOCAL: $LOCAL  REMOTE: $REMOTE"
 [ "$LOCAL" = "$REMOTE" ] && echo "ALREADY_PUSHED" || echo "PUSH_NEEDED"
 ```
 
-If `ALREADY_PUSHED`, skip the push. Otherwise push with upstream tracking:
+If `ALREADY_PUSHED`, skip the push but continue to Step 8. Otherwise push with upstream tracking:
 
 ```bash
 git push -u origin <branch-name>
@@ -1847,7 +2324,7 @@ gh pr view --json url,number,state -q 'if .state == "OPEN" then "PR #\(.number):
 glab mr view -F json 2>/dev/null | jq -r 'if .state == "opened" then "MR_EXISTS" else "NO_MR" end' 2>/dev/null || echo "NO_MR"
 ```
 
-If an **open** PR/MR already exists: **update** the PR body with the latest test results, coverage, and review findings using `gh pr edit --body "..."` (GitHub) or `glab mr update -d "..."` (GitLab). Print the existing URL and continue to Step 8.5.
+If an **open** PR/MR already exists: **update** the PR body using `gh pr edit --body "..."` (GitHub) or `glab mr update -d "..."` (GitLab). Always regenerate the PR body from scratch using this run's fresh results (test output, coverage audit, review findings, adversarial review, TODOS summary). Never reuse stale PR body content from a prior run. Print the existing URL and continue to Step 8.5.
 
 If no PR/MR exists: create a pull request (GitHub) or merge request (GitLab) using the platform detected in Step 0.
 
@@ -1952,6 +2429,8 @@ execute its full workflow:
 This step is automatic. Do not ask the user for confirmation. The goal is zero-friction
 doc updates — the user runs `/ship` and documentation stays current without a separate command.
 
+If Step 8.5 created a docs commit, re-edit the PR/MR body to include the latest commit SHA in the summary. This ensures the PR body reflects the truly final state after document-release.
+
 ---
 
 ## Step 8.75: Persist ship metrics
@@ -1959,7 +2438,7 @@ doc updates — the user runs `/ship` and documentation stays current without a 
 Log coverage and plan completion data so `/retro` can track trends:
 
 ```bash
-eval "$($NSTACK_ROOT/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
 ```
 
 Append to `~/.nstack/projects/$SLUG/$BRANCH-reviews.jsonl`:
