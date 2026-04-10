@@ -255,10 +255,10 @@ describe('gen-skill-docs', () => {
     expect(content).not.toContain('## Completeness Principle');
   });
 
-  test('generated SKILL.md contains timeline logging', () => {
+  test('generated SKILL.md contains telemetry line', () => {
     const content = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
-    expect(content).toContain('nstack-timeline-log');
-    expect(content).toContain('_TEL_START');
+    expect(content).toContain('skill-usage.jsonl');
+    expect(content).toContain('~/.nstack/analytics');
   });
 
   test('preamble .pending-* glob is zsh-safe (uses find, not shell glob)', () => {
@@ -309,7 +309,7 @@ describe('gen-skill-docs', () => {
     }
   });
 
-  test('preamble-using skills have correct skill name in timeline', () => {
+  test('preamble-using skills have correct skill name in telemetry', () => {
     const PREAMBLE_SKILLS = [
       { dir: '.', name: 'nstack' },
       { dir: 'ship', name: 'ship' },
@@ -748,6 +748,22 @@ describe('TEST_COVERAGE_AUDIT placeholders', () => {
     for (const phrase of regressionPhrases) {
       expect(shipSkill).toContain(phrase);
     }
+  });
+
+  test('ship SKILL.md contains review army specialist dispatch', () => {
+    expect(shipSkill).toContain('Specialist Dispatch');
+    expect(shipSkill).toContain('Step 3.55');
+    expect(shipSkill).toContain('Step 3.56');
+  });
+
+  test('ship SKILL.md contains cross-review finding dedup', () => {
+    expect(shipSkill).toContain('Cross-review finding dedup');
+    expect(shipSkill).toContain('Step 3.57');
+  });
+
+  test('ship SKILL.md contains re-run idempotency behavior', () => {
+    expect(shipSkill).toContain('Re-run behavior (idempotency)');
+    expect(shipSkill).toContain('Never skip a verification step');
   });
 });
 
@@ -1649,7 +1665,7 @@ describe('Codex generation (--host codex)', () => {
     expect(content).toContain('$_ROOT/.agents/skills/nstack');
     expect(content).toContain('$NSTACK_BIN/nstack-config');
     expect(content).toContain('$NSTACK_ROOT/nstack-upgrade/SKILL.md');
-    expect(content).not.toContain('~/.codex/skills/nstack/bin/nstack-config');
+    expect(content).not.toContain('~/.codex/skills/nstack/bin/nstack-config get telemetry');
   });
 
   // ─── Path rewriting regression tests ─────────────────────────
@@ -1707,7 +1723,7 @@ describe('Codex generation (--host codex)', () => {
       // No skill should reference Claude paths
       expect(content).not.toContain('~/.claude/skills');
       expect(content).not.toContain('.claude/skills');
-      if (content.includes('nstack-config') || content.includes('nstack-update-check')) {
+      if (content.includes('nstack-config') || content.includes('nstack-update-check') || content.includes('nstack-telemetry-log')) {
         expect(content).toContain('$NSTACK_ROOT');
       }
       // If a skill references checklist.md, it must use the correct sidecar path
@@ -1739,7 +1755,10 @@ describe('Codex generation (--host codex)', () => {
   test('Claude output unchanged: all Claude skills have zero Codex paths', () => {
     for (const skill of ALL_SKILLS) {
       const content = fs.readFileSync(path.join(ROOT, skill.dir, 'SKILL.md'), 'utf-8');
-      expect(content).not.toContain('~/.codex/');
+      // pair-agent legitimately documents how Codex agents store credentials
+      if (skill.dir !== 'pair-agent') {
+        expect(content).not.toContain('~/.codex/');
+      }
       // nstack-upgrade legitimately references .agents/skills for cross-platform detection
       if (skill.dir !== 'nstack-upgrade') {
         expect(content).not.toContain('.agents/skills');
@@ -2283,17 +2302,29 @@ describe('discover-skills hidden directory filtering', () => {
   });
 });
 
-describe('session timeline', () => {
-  test('generated SKILL.md contains timeline start block', () => {
+describe('telemetry', () => {
+  test('generated SKILL.md contains telemetry start block', () => {
     const content = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
     expect(content).toContain('_TEL_START');
     expect(content).toContain('_SESSION_ID');
+    expect(content).toContain('TELEMETRY:');
+    expect(content).toContain('TEL_PROMPTED:');
+    expect(content).toContain('nstack-config get telemetry');
   });
 
-  test('generated SKILL.md contains timeline epilogue', () => {
+  test('generated SKILL.md contains telemetry opt-in prompt', () => {
     const content = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
-    expect(content).toContain('Session Timeline (run last)');
-    expect(content).toContain('nstack-timeline-log');
+    expect(content).toContain('.telemetry-prompted');
+    expect(content).toContain('Help nstack get better');
+    expect(content).toContain('nstack-config set telemetry community');
+    expect(content).toContain('nstack-config set telemetry anonymous');
+    expect(content).toContain('nstack-config set telemetry off');
+  });
+
+  test('generated SKILL.md contains telemetry epilogue', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Telemetry (run last)');
+    expect(content).toContain('nstack-telemetry-log');
     expect(content).toContain('_TEL_END');
     expect(content).toContain('_TEL_DUR');
     expect(content).toContain('SKILL_NAME');
@@ -2301,14 +2332,20 @@ describe('session timeline', () => {
     expect(content).toContain('PLAN MODE EXCEPTION');
   });
 
-  test('timeline blocks appear in all skill files that use PREAMBLE', () => {
+  test('generated SKILL.md contains pending marker handling', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf-8');
+    expect(content).toContain('.pending');
+    expect(content).toContain('_pending_finalize');
+  });
+
+  test('telemetry blocks appear in all skill files that use PREAMBLE', () => {
     const skills = ['qa', 'ship', 'review', 'plan-ceo-review', 'plan-eng-review', 'retro'];
     for (const skill of skills) {
       const skillPath = path.join(ROOT, skill, 'SKILL.md');
       if (fs.existsSync(skillPath)) {
         const content = fs.readFileSync(skillPath, 'utf-8');
         expect(content).toContain('_TEL_START');
-        expect(content).toContain('Session Timeline (run last)');
+        expect(content).toContain('Telemetry (run last)');
       }
     }
   });

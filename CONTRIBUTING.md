@@ -367,7 +367,7 @@ to `nstack/...`, so they'll resolve to the global install automatically.
 
 ### Switching prefix mode
 
-If you vendored nstack with one prefix setting and want to switch:
+If you installed nstack with one prefix setting and want to switch:
 
 ```bash
 cd .claude/skills/nstack && ./setup --no-prefix   # switch to /qa, /ship
