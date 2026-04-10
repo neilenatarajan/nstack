@@ -8,7 +8,7 @@ description: |
   production URL, health check endpoints, and deploy status commands. Writes
   the configuration to CLAUDE.md so all future deploys are automatic.
   Use when: "setup deploy", "configure deployment", "set up land-and-deploy",
-  "how do I deploy with nstack", "add deploy config".
+  "how do I deploy with nstack", "add deploy config". (nstack)
 allowed-tools:
   - Bash
   - Read
