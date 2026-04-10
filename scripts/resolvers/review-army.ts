@@ -47,7 +47,7 @@ echo "TEST_FW: \${TEST_FW:-unknown}"
 ### Read specialist hit rates (adaptive gating)
 
 \`\`\`bash
-${ctx.paths.binDir}/gstack-specialist-stats 2>/dev/null || true
+${ctx.paths.binDir}/nstack-specialist-stats 2>/dev/null || true
 \`\`\`
 
 ### Select specialists
@@ -71,7 +71,7 @@ Based on the scope signals above, select which specialists to dispatch.
 
 After scope-based selection, apply adaptive gating based on specialist hit rates:
 
-For each conditional specialist that passed scope gating, check the \`gstack-specialist-stats\` output above:
+For each conditional specialist that passed scope gating, check the \`nstack-specialist-stats\` output above:
 - If tagged \`[GATE_CANDIDATE]\` (0 findings in 10+ dispatches): skip it. Print: "[specialist] auto-gated (0 findings in N reviews)."
 - If tagged \`[NEVER_GATE]\`: always dispatch regardless of hit rate. Security and data-migration are insurance policy specialists — they should run even when silent.
 

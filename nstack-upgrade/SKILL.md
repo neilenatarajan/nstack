@@ -130,16 +130,16 @@ If `$STASH_OUTPUT` contains "Saved working directory", warn the user: "Note: loc
 ```bash
 PARENT=$(dirname "$INSTALL_DIR")
 TMP_DIR=$(mktemp -d)
-git clone --depth 1 https://github.com/neilenatarajan/nstack.git "$TMP_DIR/nstack"
+git clone --depth 1 https://github.com/garrytan/nstack.git "$TMP_DIR/nstack"
 mv "$INSTALL_DIR" "$INSTALL_DIR.bak"
 mv "$TMP_DIR/nstack" "$INSTALL_DIR"
 cd "$INSTALL_DIR" && ./setup
 rm -rf "$INSTALL_DIR.bak" "$TMP_DIR"
 ```
 
-### Step 4.5: Sync local vendored copy
+### Step 4.5: Handle local vendored copy
 
-Use the install directory from Step 2. Check if there's also a local vendored copy that needs updating:
+Use the install directory from Step 2. Check if there's also a local vendored copy, and whether team mode is active:
 
 ```bash
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -151,10 +151,24 @@ if [ -n "$_ROOT" ] && [ -d "$_ROOT/.claude/skills/nstack" ]; then
     LOCAL_NSTACK="$_ROOT/.claude/skills/nstack"
   fi
 fi
+_TEAM_MODE=$(~/.claude/skills/nstack/bin/nstack-config get team_mode 2>/dev/null || echo "false")
 echo "LOCAL_NSTACK=$LOCAL_NSTACK"
+echo "TEAM_MODE=$_TEAM_MODE"
 ```
 
-If `LOCAL_NSTACK` is non-empty, update it by copying from the freshly-upgraded primary install (same approach as README vendored install):
+**If `LOCAL_NSTACK` is non-empty AND `TEAM_MODE` is `true`:** Remove the vendored copy. Team mode uses the global install as the single source of truth.
+
+```bash
+cd "$_ROOT"
+git rm -r --cached .claude/skills/nstack/ 2>/dev/null || true
+if ! grep -qF '.claude/skills/nstack/' .gitignore 2>/dev/null; then
+  echo '.claude/skills/nstack/' >> .gitignore
+fi
+rm -rf "$LOCAL_NSTACK"
+```
+Tell user: "Removed vendored copy at `$LOCAL_NSTACK` (team mode active — global install is the source of truth). Commit the `.gitignore` change when ready."
+
+**If `LOCAL_NSTACK` is non-empty AND `TEAM_MODE` is NOT `true`:** Update it by copying from the freshly-upgraded primary install (same approach as README vendored install):
 ```bash
 mv "$LOCAL_NSTACK" "$LOCAL_NSTACK.bak"
 cp -Rf "$INSTALL_DIR" "$LOCAL_NSTACK"
@@ -243,11 +257,13 @@ Use the output to determine if an upgrade is available.
 
 3. If no output (primary is up to date): check for a stale local vendored copy.
 
-Run the Step 2 bash block above to detect the primary install type and directory (`INSTALL_TYPE` and `INSTALL_DIR`). Then run the Step 4.5 detection bash block above to check for a local vendored copy (`LOCAL_NSTACK`).
+Run the Step 2 bash block above to detect the primary install type and directory (`INSTALL_TYPE` and `INSTALL_DIR`). Then run the Step 4.5 detection bash block above to check for a local vendored copy (`LOCAL_NSTACK`) and team mode status (`TEAM_MODE`).
 
 **If `LOCAL_NSTACK` is empty** (no local vendored copy): tell the user "You're already on the latest version (v{version})."
 
-**If `LOCAL_NSTACK` is non-empty**, compare versions:
+**If `LOCAL_NSTACK` is non-empty AND `TEAM_MODE` is `true`:** Remove the vendored copy using the Step 4.5 team-mode removal bash block above. Tell user: "Global v{version} is up to date. Removed stale vendored copy (team mode active). Commit the `.gitignore` change when ready."
+
+**If `LOCAL_NSTACK` is non-empty AND `TEAM_MODE` is NOT `true`**, compare versions:
 ```bash
 PRIMARY_VER=$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "unknown")
 LOCAL_VER=$(cat "$LOCAL_NSTACK/VERSION" 2>/dev/null || echo "unknown")

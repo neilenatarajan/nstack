@@ -544,12 +544,12 @@ for (const currentHost of hostsToRun) {
       tokenBudget.push({ skill: relOutput, lines, tokens });
     }
 
-    // Generate gstack-lite and gstack-full for OpenClaw host
+    // Generate nstack-lite and nstack-full for OpenClaw host
     if (currentHost === 'openclaw' && !DRY_RUN) {
       const openclawDir = path.join(ROOT, 'openclaw');
       if (!fs.existsSync(openclawDir)) fs.mkdirSync(openclawDir, { recursive: true });
 
-      const gstackLite = `# gstack-lite Planning Discipline
+      const nstackLite = `# nstack-lite Planning Discipline
 
 Injected by the orchestrator into spawned Claude Code sessions. Append to existing CLAUDE.md.
 
@@ -562,10 +562,10 @@ Injected by the orchestrator into spawned Claude Code sessions. Append to existi
    imports, untested paths, style inconsistencies.
 5. Report when done: what shipped, what decisions you made, anything uncertain.
 `;
-      fs.writeFileSync(path.join(openclawDir, 'gstack-lite-CLAUDE.md'), gstackLite);
-      console.log('GENERATED: openclaw/gstack-lite-CLAUDE.md');
+      fs.writeFileSync(path.join(openclawDir, 'nstack-lite-CLAUDE.md'), nstackLite);
+      console.log('GENERATED: openclaw/nstack-lite-CLAUDE.md');
 
-      const gstackFull = `# gstack-full Pipeline
+      const nstackFull = `# nstack-full Pipeline
 
 Injected by the orchestrator for complete feature builds. Append to existing CLAUDE.md.
 
@@ -578,10 +578,10 @@ Injected by the orchestrator for complete feature builds. Append to existing CLA
 
 Do not ask for human input until the PR is ready for review.
 `;
-      fs.writeFileSync(path.join(openclawDir, 'gstack-full-CLAUDE.md'), gstackFull);
-      console.log('GENERATED: openclaw/gstack-full-CLAUDE.md');
+      fs.writeFileSync(path.join(openclawDir, 'nstack-full-CLAUDE.md'), nstackFull);
+      console.log('GENERATED: openclaw/nstack-full-CLAUDE.md');
 
-      const gstackPlan = `# gstack-plan: Full Review Gauntlet
+      const nstackPlan = `# nstack-plan: Full Review Gauntlet
 
 Injected by the orchestrator when the user wants to plan a Claude Code project.
 Append to existing CLAUDE.md.
@@ -597,13 +597,13 @@ Append to existing CLAUDE.md.
    - Plan file path
    - One-paragraph summary of what was designed and the key decisions
    - List of accepted scope expansions (if any)
-   - Recommended next step (usually: spawn a new session with gstack-full to implement)
+   - Recommended next step (usually: spawn a new session with nstack-full to implement)
 
 Do not implement anything. This is planning only.
 The orchestrator will persist the plan link to its own memory/knowledge store.
 `;
-      fs.writeFileSync(path.join(openclawDir, 'gstack-plan-CLAUDE.md'), gstackPlan);
-      console.log('GENERATED: openclaw/gstack-plan-CLAUDE.md');
+      fs.writeFileSync(path.join(openclawDir, 'nstack-plan-CLAUDE.md'), nstackPlan);
+      console.log('GENERATED: openclaw/nstack-plan-CLAUDE.md');
     }
 
     if (DRY_RUN && hasChanges) {
