@@ -1,20 +1,24 @@
 ---
 name: research-peer-review
 preamble-tier: 2
-version: 1.0.0
+version: 2.0.0
 description: |
-  Adversarial academic merit review. Reads pipeline artifacts and produces
-  a structured peer review report evaluating 6 dimensions: search quality,
-  screening rigor, synthesis quality, evidence strength, gaps/limitations,
-  and reproducibility. Journal-style accept/revise/reject framing.
-  Read-only: never modifies existing artifacts.
-  Invoke when: "peer review", "review the research", "critique the review",
-  "assess the evidence", "quality check the synthesis". (nstack)
+  Adversarial academic peer review for any research artifact. Accepts papers,
+  posters, extended abstracts, literature reviews, and structured data (PDF,
+  markdown, JSON, YAML). OpenReview-format output with panel mode: Claude
+  primary review + Codex independent review + area chair synthesis.
+  Experimental citation verification via web search.
+  Read-only: never modifies input artifacts.
+  Invoke when: "peer review", "review the research", "review my paper",
+  "review this poster", "critique the review", "assess the evidence". (nstack)
 allowed-tools:
   - Bash
   - Read
   - Grep
   - Glob
+  - Write
+  - WebSearch
+  - Agent
   - AskUserQuestion
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
@@ -466,37 +470,438 @@ Then write a `## NSTACK REVIEW REPORT` section to the end of the plan file:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
-# Research Peer Review — Adversarial Academic Merit Assessment
+# Peer Review — Adversarial Academic Assessment
 
 ## Overview
 
-This skill acts as an adversarial academic peer reviewer, evaluating the quality
-of a literature review produced by `/research-synthesis`. It is **read-only** —
-it never modifies existing artifacts. It only writes its own review outputs.
+This skill acts as an adversarial academic peer reviewer. It reviews **any research
+artifact** (papers, posters, extended abstracts, literature reviews, structured data)
+and produces a structured review in OpenReview format.
 
-6 dimensions assessed:
-1. **Search quality** — source coverage, query translation, truncation, temporal range
-2. **Screening rigor** — criteria consistency, questionable exclusions, confidence calibration
-3. **Synthesis quality** — claim grounding, theme coherence, citation completeness
-4. **Evidence strength** — methodology quality, study design diversity, single-source fragility
-5. **Gaps and limitations** — publication bias, geographic/temporal limitations, missing perspectives
-6. **Reproducibility** — can another researcher replicate this review?
+**Three rubrics** adapt the review to the artifact type:
+- **Paper** — full research papers, conference submissions
+- **Poster** — posters, extended abstracts
+- **General** — literature reviews, design docs, technical specs, everything else
 
-## Step 1: Determine Review Tier
+**Panel mode** (default): Claude does a primary review, Codex does an independent
+review (no cross-contamination), then Claude synthesizes as area chair. Falls back
+to Claude subagent if Codex is unavailable, or single-reviewer mode if both fail.
 
-Check which artifacts exist. The review operates at 3 tiers:
+**Citation verification** (experimental): with user consent, spot-checks up to 5
+load-bearing citations via web search. Best-effort, abstract-level verification only.
+
+This skill is **read-only** — it never modifies input artifacts. It only writes its
+own review output files.
+
+**Supported file types:** PDF (.pdf), Markdown (.md), JSON, YAML, plain text (.txt),
+LaTeX (.tex, best-effort). Not supported: Word (.docx), HTML, images, binary files.
+
+---
+
+## Capability Detection
+
+Before beginning the review, check what tools are available:
 
 ```bash
-echo "--- Artifact check ---"
-[ -f artifacts/search_results.jsonl ] && echo "FOUND: search_results.jsonl ($(wc -l < artifacts/search_results.jsonl | tr -d ' ') lines)" || echo "MISSING: search_results.jsonl"
-[ -f artifacts/search_meta.json ] && echo "FOUND: search_meta.json" || echo "MISSING: search_meta.json"
-[ -f artifacts/screening_decisions.jsonl ] && echo "FOUND: screening_decisions.jsonl ($(wc -l < artifacts/screening_decisions.jsonl | tr -d ' ') lines)" || echo "MISSING: screening_decisions.jsonl"
-[ -f artifacts/included_papers.json ] && echo "FOUND: included_papers.json" || echo "MISSING: included_papers.json"
-[ -f artifacts/evidence_graph.json ] && echo "FOUND: evidence_graph.json" || echo "MISSING: evidence_graph.json"
-[ -f artifacts/synthesis.md ] && echo "FOUND: synthesis.md" || echo "MISSING: synthesis.md"
-[ -f artifacts/protocol.json ] && echo "FOUND: protocol.json" || echo "MISSING: protocol.json"
-echo "--- End check ---"
+which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
+
+Report detected capabilities. The review adapts to what's available:
+- **Full panel + citation**: Codex available, WebSearch available
+- **Full panel**: Codex available, no WebSearch
+- **Subagent panel**: No Codex (Claude subagent fallback), with or without WebSearch
+- **Single reviewer**: Both Codex and subagent failed (rare)
+
+---
+
+## Consent Gate
+
+Before any external calls, use AskUserQuestion:
+
+> This review can use an external AI (Codex) for an independent second opinion.
+> Your artifact content will be sent to Codex for review. Optionally, I can also
+> verify citations via web search (experimental).
+
+Options:
+- A) Full panel + citation verification (recommended)
+- B) Panel only (Codex review, no web search)
+- C) Single reviewer only (no external calls)
+
+If user chooses C, skip all Codex/subagent steps and citation verification.
+If user chooses B, skip citation verification but run panel mode.
+If Codex is unavailable and user chose A or B, fall back to Claude subagent panel.
+
+---
+
+## Legacy Pipeline Detection
+
+**Check this FIRST, before any other artifact detection.**
+
+If the user provides a directory path (not a file), check for /research-synthesis
+pipeline artifacts:
+
+```bash
+_INPUT_PATH="<user-provided path>"
+if [ -d "$_INPUT_PATH" ]; then
+  echo "--- Legacy pipeline check ---"
+  [ -f "$_INPUT_PATH/search_results.jsonl" ] && echo "FOUND: search_results.jsonl" || echo "MISSING: search_results.jsonl"
+  [ -f "$_INPUT_PATH/search_meta.json" ] && echo "FOUND: search_meta.json" || echo "MISSING: search_meta.json"
+  [ -f "$_INPUT_PATH/screening_decisions.jsonl" ] && echo "FOUND: screening_decisions.jsonl" || echo "MISSING: screening_decisions.jsonl"
+  [ -f "$_INPUT_PATH/synthesis.md" ] && echo "FOUND: synthesis.md" || echo "MISSING: synthesis.md"
+  echo "--- End check ---"
+fi
+```
+
+If the directory contains `search_results.jsonl` AND `search_meta.json`, this is a
+legacy /research-synthesis pipeline. **Jump directly to the Legacy Review section
+at the bottom of this skill. Skip all other sections.**
+
+If the input is a directory but does NOT contain pipeline files, tell the user:
+"Please specify a file, not a directory. Directory input is only supported for
+/research-synthesis pipeline artifacts."
+
+---
+
+## Artifact Identification
+
+If the user did not provide a path, use AskUserQuestion to ask for one.
+
+Verify the file exists:
+```bash
+[ -f "<path>" ] && echo "FILE_EXISTS" || echo "FILE_NOT_FOUND"
+```
+
+If not found, tell the user and stop.
+
+**Detect file type** from extension: .pdf, .md, .json, .yaml/.yml, .txt, .tex.
+If unsupported (.docx, .html, images, binary), tell the user to convert to PDF or
+markdown and stop.
+
+**Detect artifact type** from content. Read the first 2000 characters and look for
+structural signals:
+
+| Signal | Detected Type |
+|--------|--------------|
+| Has "Abstract" + "Introduction" + "Methodology"/"Methods" | `paper` |
+| Has "Contributions" + bullet points, < 3000 words total | `poster` |
+| Has "Related work" + many citations + "survey"/"review" in title | `lit_review` |
+| Has "## Problem Statement" or "RFC" or "Design:" in title | `design_doc` |
+| None of the above | `general` |
+
+Detection precedence:
+1. User explicitly specifies type → use that
+2. File extension + content heuristic → auto-detect
+3. If ambiguous → default to `general`, note ambiguity in review header
+
+Report: "Detected artifact type: [type] (from [signal]). Rubric: [paper/poster/general]."
+
+---
+
+## Read Artifact
+
+Read the artifact content with size limits:
+- **PDF**: Read with page ranges. Max 20 pages. If longer, read first 20 pages and note
+  "Artifact truncated for review (first 20 pages of N total)."
+- **Text files** (md, txt, json, yaml, tex): Read directly. Max 50,000 characters. If longer,
+  read first 50,000 characters and note truncation.
+- **LaTeX**: Read as text. Some markup noise is expected and acceptable.
+
+**Empty artifact guard**: After reading, check content length. If extracted text is
+< 100 characters total (or < 50 characters per page for PDFs), halt with:
+"This artifact appears to be empty or contains only images/scans. Cannot review
+text content that isn't present."
+
+**PDF extraction quality**: If extracted text contains run-together words, missing section
+headers, or figure labels inline with body text, note in the review preamble:
+"PDF layout may have affected extraction quality."
+
+---
+
+## Select Rubric
+
+Based on the detected artifact type, select the appropriate rubric.
+
+**All rubrics share these universal scored dimensions** (for panel mode comparison):
+- Overall: X/10 (calibrated: 5 = borderline, 7 = strong accept, 8+ = exceptional)
+- Confidence: X/5 (1 = unfamiliar with topic, 5 = expert)
+- Soundness: X/4 (methodology, evidence quality)
+- Presentation: X/4 (clarity, structure, communication)
+- Contribution: X/4 (novelty, significance, impact)
+
+### Paper Rubric
+
+For canonical types: `paper`
+
+Narrative dimensions to evaluate:
+- **Soundness**: Are claims supported by evidence? Is methodology appropriate?
+- **Significance**: Does this advance the field? Is the contribution clear?
+- **Novelty**: What is new compared to prior work?
+- **Clarity**: Is the paper well-written and well-structured?
+- **Reproducibility**: Could someone replicate this work from the description?
+- **Related work**: Is prior work adequately covered?
+
+### Poster Rubric
+
+For canonical types: `poster`
+
+Narrative dimensions to evaluate:
+- **Core claim clarity**: Is the main contribution immediately understandable?
+- **Evidence density**: Does the limited space use evidence effectively?
+- **Visual communication**: Does structure aid comprehension?
+- **Completeness**: Is enough detail present to evaluate the claim?
+- **Impact statement**: Is the "so what" clear?
+
+### General Rubric
+
+For canonical types: `lit_review`, `design_doc`, `general`
+
+Narrative dimensions to evaluate:
+- **Soundness**: Are claims supported by evidence or reasoning?
+- **Completeness**: Are requirements/questions fully addressed?
+- **Clarity**: Could the intended audience act on this without asking questions?
+- **Internal consistency**: Do all parts agree with each other?
+- **Scope appropriateness**: Is the scope well-matched to the stated goal?
+
+---
+
+## Claude Primary Review
+
+Produce a full review using the selected rubric. This is the primary review.
+
+**Anti-sycophancy calibration** — follow these rules strictly:
+
+1. Score calibration: 5/10 is borderline, not bad. Most papers at top venues score
+   5-7. 7 is a strong accept. 8+ is exceptional. 9 or 10 means groundbreaking.
+   Score realistically.
+2. You MUST list at least 3 concrete weaknesses. Each weakness MUST reference a
+   specific text span from the artifact.
+3. For prose artifacts (PDF, markdown, text): quote the exact text.
+   For noisy PDF extraction: use `[Section X, paragraph Y]` approximate reference.
+   For structured artifacts (JSON, YAML): reference by key path (e.g., `config.auth.timeout`).
+   For LaTeX: quote the source text (markup included is fine).
+
+**Output format:**
+
+```
+## Summary
+[2-3 sentence summary of the artifact]
+
+## Strengths
+1. [Strength with specific reference to artifact text]
+2. [...]
+
+## Weaknesses (minimum 3, each tied to a specific text span)
+1. [Weakness]: "[quoted text or span reference]" — [explanation]
+2. [...]
+3. [...]
+
+## Questions for Authors
+1. [Specific question]
+2. [...]
+
+## Scores
+- Overall: X/10
+- Confidence: X/5
+- Soundness: X/4
+- Presentation: X/4
+- Contribution: X/4
+
+## Decision: accept / minor_revision / major_revision / reject
+```
+
+Decision guidance (reviewer judgment, not mechanical):
+- **accept**: Overall >= 7 AND no critical weaknesses (Soundness >= 3)
+- **minor_revision**: Overall 6-7, fixable weaknesses, sound methodology
+- **major_revision**: Overall 4-5, significant gaps but salvageable core contribution
+- **reject**: Overall < 4 OR Soundness <= 1 OR fundamental methodological problems
+
+---
+
+## Independent Review (Panel Mode)
+
+**Skip this section if user chose "Single reviewer only" in the Consent Gate.**
+
+Run an independent second review using Codex (or Claude subagent fallback). The
+second reviewer has NO access to the primary review. Complete isolation.
+
+### Codex Path
+
+Write the full review prompt to a temp file. The prompt includes:
+- The artifact content (full text as read above)
+- The selected rubric and its narrative dimensions
+- The universal scored dimensions
+- The anti-sycophancy calibration rules (same as above)
+- The output format template (same as above)
+- Instruction: "You are an independent academic peer reviewer. Produce a structured
+  review of this artifact. Be adversarial. Score realistically."
+
+```bash
+CODEX_PROMPT_FILE=$(mktemp /tmp/nstack-peer-review-XXXXXXXX.txt)
+chmod 600 "$CODEX_PROMPT_FILE"
+```
+
+Write the assembled prompt to that file. Then invoke:
+
+```bash
+TMPERR=$(mktemp /tmp/nstack-peer-review-err-XXXXXXXX)
+_REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+codex exec "$(cat "$CODEX_PROMPT_FILE")" -C "$_REPO_ROOT" -s read-only -c 'model_reasoning_effort="high"' 2>"$TMPERR"
+```
+
+Use a 5-minute timeout (`timeout: 300000`). After completion, read stderr:
+
+```bash
+cat "$TMPERR"
+rm -f "$TMPERR" "$CODEX_PROMPT_FILE"
+```
+
+**Error handling:**
+- If Codex is not installed, or returns non-zero exit, or times out, or returns empty:
+  fall back to Claude subagent (below).
+- If Codex returns prose but no structured scores block: proceed with the prose review.
+  Note "Structured scores unavailable for Codex reviewer" in the area chair synthesis.
+
+### Claude Subagent Fallback
+
+If Codex is unavailable or failed, dispatch via the Agent tool:
+
+Prompt the subagent with the same content: artifact text, rubric, scoring instructions,
+output format, anti-sycophancy rules. The subagent has fresh context and cannot see
+the primary review. This ensures genuine independence.
+
+If the subagent also fails: proceed to Write Outputs with a single-reviewer report.
+Note "Panel mode unavailable — single reviewer report" in the output.
+
+---
+
+## Area Chair Synthesis
+
+**Skip if only one review exists (single-reviewer mode).**
+
+Read both reviews (Claude primary + Codex/subagent independent). Synthesize as area chair:
+
+1. **Score comparison**: If both reviews have structured scores, compute the delta for
+   each universal dimension. Flag any disagreement > 2 on Overall or > 1 on any sub-score.
+
+2. **Agreement/disagreement matrix**: For each dimension, note whether reviewers agree
+   (delta <= 1) or disagree (delta > 1). If structured scores are missing for one
+   reviewer, note "scores unavailable" and proceed with free-text comparison only.
+
+3. **Decision conflict resolution**: If reviewers disagree on the decision (e.g., one
+   says accept, other says reject), provide explicit reasoning that addresses both
+   reviewers' arguments before issuing the final consolidated decision.
+
+4. **Suspicion check**: If any reviewer's Overall score is >= 8/10 AND all sub-scores
+   are 4/4, flag as "suspiciously positive — verify this reviewer's weaknesses are
+   substantive, not token."
+
+5. **Final meta-review**: Produce a consolidated summary, consolidated scores, and
+   final decision. Flag any "split decisions" where reviewers fundamentally disagreed.
+
+---
+
+## Citation Verification (Experimental)
+
+**Skip if user declined citation verification in the Consent Gate, or if WebSearch
+is not available.**
+
+This is experimental. It is not a core success gate.
+
+1. Identify load-bearing citations: find claims in the abstract and introduction that
+   depend on a single citation. These are the most critical. If fewer than 5 found in
+   abstract/introduction, expand to conclusion, then methods. Never check citations
+   that only appear in related work (those are context, not load-bearing).
+
+2. For up to 5 selected citations, use WebSearch to verify:
+   - Does the paper exist? (search by title + authors)
+   - Does the abstract support the claim being attributed to it?
+   - Flag: phantom citations (paper doesn't exist), misattributions (paper exists but
+     doesn't say what's claimed), and version mismatches (citing a preprint when a
+     revised version exists).
+
+3. Citation verification is best-effort. Full-text verification (behind paywalls) is
+   out of scope. If a search returns no results, mark as "unverifiable" (not "wrong").
+
+---
+
+## Write Outputs
+
+Write two output files:
+
+**review_report.md** — human-readable full review containing:
+- Review metadata (artifact type, detected mode, date)
+- Area chair synthesis (if panel mode) or primary review (if single reviewer)
+- Individual reviews from each reviewer
+- Citation verification results (if run)
+- Agreement/disagreement matrix (if panel mode)
+
+**review_report.json** — machine-readable with this schema:
+
+```json
+{
+  "artifact_type": "paper|poster|lit_review|design_doc|general",
+  "artifact_path": "/path/to/input",
+  "detected_mode": "full_panel_citation|full_panel|subagent_panel_citation|subagent_panel|single",
+  "panel_mode": true,
+  "truncated": false,
+  "individual_reviews": [
+    {
+      "reviewer": "claude|codex|claude-subagent",
+      "summary": "...",
+      "strengths": ["..."],
+      "weaknesses": [{"text": "...", "quote": "...", "explanation": "..."}],
+      "questions": ["..."],
+      "scores": {"overall": 6, "confidence": 4, "soundness": 3, "presentation": 3, "contribution": 3},
+      "decision": "minor_revision"
+    }
+  ],
+  "meta_review": {
+    "agreement_matrix": {"soundness": {"claude": 3, "codex": 2, "delta": 1}},
+    "conflicts_resolved": ["..."],
+    "consolidated_scores": {"overall": 6},
+    "decision": "minor_revision",
+    "summary": "..."
+  },
+  "citation_verification": {
+    "enabled": true,
+    "experimental": true,
+    "checked": 5,
+    "issues_found": [{"citation": "...", "issue": "...", "evidence": "..."}]
+  },
+  "reviewedAt": "ISO-8601"
+}
+```
+
+**Output location**: Write to the directory containing the input artifact. Also write
+canonical fixed-name copies (`review_report.md` and `review_report.json`) for backwards
+compatibility. If the output directory is not writable, fall back to CWD.
+
+---
+
+## Report Results
+
+Present a summary to the user:
+
+- **Decision**: accept / minor_revision / major_revision / reject
+- **Mode**: full panel / subagent panel / single reviewer
+- **Artifact type**: what was detected
+- **Scores**: consolidated scores table (if panel mode) or primary scores
+- **Top 3 findings** by severity
+- **Citation verification**: N checked, M issues found (if run)
+- **Reviewer agreement**: X/5 dimensions agreed, Y disagreements (if panel mode)
+
+Ask if the user wants elaboration on any finding, dimension, or reviewer's perspective.
+
+---
+
+## Legacy Review — /research-synthesis Pipeline Artifacts
+
+**This section is only reached when the input is a directory containing
+/research-synthesis pipeline files (detected in Legacy Pipeline Detection above).**
+
+This preserves the original 6-dimension review for backwards compatibility.
+
+### Determine Review Tier
 
 | Tier | Required Artifacts | Dimensions Assessed |
 |------|-------------------|-------------------|
@@ -504,10 +909,16 @@ echo "--- End check ---"
 | `search_screen` | + screening_decisions.jsonl + included_papers.json | + Screening rigor |
 | `full_pipeline` | + evidence_graph.json + synthesis.md | All 6 dimensions |
 
-Report the detected tier. If no artifacts found, tell the user to run
-`/research-synthesis` first.
+### 6 Dimensions
 
-## Step 2: Read All Available Artifacts
+1. **Search quality** — source coverage, query translation, truncation, temporal range
+2. **Screening rigor** — criteria consistency, questionable exclusions, confidence calibration
+3. **Synthesis quality** — claim grounding, theme coherence, citation completeness
+4. **Evidence strength** — methodology quality, study design diversity, single-source fragility
+5. **Gaps and limitations** — publication bias, geographic/temporal limitations, missing perspectives
+6. **Reproducibility** — can another researcher replicate this review?
+
+### Read Artifacts
 
 Read each artifact file using the Read tool. For large files:
 - `search_results.jsonl`: read first 50 lines and last 10 lines
@@ -517,148 +928,75 @@ Read each artifact file using the Read tool. For large files:
 - `synthesis.md`: read in full
 - `protocol.json`: read in full (if present)
 
-## Step 3: Pass 1 — Search and Screening Review
+### Review Passes
 
-Evaluate search quality:
-- **Source coverage**: Were all 4 APIs queried? Any sources missing or failed?
-- **Query translation**: Does the search query adequately capture the research question?
-- **Truncation**: Were results capped? Could relevant papers have been missed?
-- **Temporal coverage**: Does the date range match the research question's needs?
-- **Dedup rate**: Was deduplication effective? Suspiciously low or high?
-- **Missing search terms**: Are there obvious synonyms or related terms not searched?
+**Pass 1 — Search and Screening**: Evaluate source coverage, query translation,
+truncation, temporal coverage, dedup rate, missing search terms. If screening
+artifacts exist, also evaluate criteria consistency, questionable exclusions,
+confidence calibration, title filter accuracy, uncertain paper adjudication.
 
-If screening artifacts exist, also evaluate:
-- **Criteria consistency**: Are inclusion/exclusion criteria applied uniformly?
-- **Questionable exclusions**: Any papers excluded that probably should be included?
-- **Confidence calibration**: Are confidence scores reasonable? Any overconfident exclusions?
-- **Title filter accuracy**: Were papers wrongly excluded at the title-screening stage?
-- **Uncertain papers**: How many flagged as uncertain? Were they adjudicated?
+**Pass 2 — Synthesis and Evidence** (skip for search_only and search_screen tiers):
+For at least 5 claims in the evidence graph, verify claim grounding (does the
+sourceQuote support the claim?). Check contradiction handling, theme coherence,
+citation completeness, methodology quality, single-source fragility.
 
-Record findings for each sub-dimension.
+**Pass 3 — Meta-Review**: Evaluate gaps/limitations (publication bias, geographic,
+temporal, language, gray literature, missing perspectives) and reproducibility
+(search, screening, synthesis reproducibility, artifact completeness).
 
-## Step 4: Pass 2 — Synthesis and Evidence Review
+### Legacy Outputs
 
-**Skip this step for `search_only` and `search_screen` tiers.**
+Write `artifacts/review_report.json` with the legacy schema:
 
-Evaluate synthesis quality and evidence strength:
-
-### Claim grounding (critical check)
-For at least 5 claims in the evidence graph, verify:
-- Does the `sourceQuote` actually appear in the paper's abstract?
-- Does the quote actually support the claim being made?
-- Is the claim a fair characterization of the source?
-
-Flag any ungrounded claims (quote doesn't support claim) or suspicious quotes
-(quote seems fabricated or too perfect).
-
-### Additional checks
-- **Contradiction handling**: Are contradictions surfaced or silently resolved?
-- **Theme coherence**: Do the identified themes logically cover the evidence?
-- **Citation completeness**: Are all included papers cited in the synthesis?
-- **Methodology quality**: Is study design diversity acknowledged?
-- **Single-source fragility**: How many claims rest on a single paper?
-- **Study design diversity**: RCTs vs. observational vs. reviews — is the mix appropriate?
-
-Produce per-claim reviewer confidence reassessment where the reviewer's confidence
-differs significantly from the synthesis confidence.
-
-## Step 5: Pass 3 — Meta-Review
-
-Evaluate gaps, limitations, and reproducibility:
-
-### Gaps and Limitations
-- **Publication bias**: Are null results or negative findings represented?
-- **Geographic limitations**: Are all relevant research regions covered?
-- **Temporal limitations**: Is the date range appropriate? Missing recent work?
-- **Language bias**: Were non-English papers considered if relevant?
-- **Gray literature**: Were preprints, theses, reports considered?
-- **Missing perspectives**: Are there obvious stakeholder viewpoints absent?
-
-### Reproducibility
-- **Search reproducibility**: Could another researcher replicate the search?
-- **Screening reproducibility**: Are criteria clear enough to follow?
-- **Synthesis reproducibility**: Is the logic from papers to claims traceable?
-- **Artifact completeness**: Are all intermediate artifacts present and valid?
-
-### Overall Assessment
-Produce an overall decision:
-- **accept** — review is methodologically sound, claims are well-grounded
-- **minor_revision** — mostly sound, specific fixable issues identified
-- **major_revision** — significant gaps or ungrounded claims that need substantial work
-- **reject** — fundamental methodological problems, claims not supported by evidence
-
-## Step 6: Write Outputs
-
-Write `artifacts/review_report.json`:
 ```json
 {
   "overallAssessment": {
     "decision": "accept|minor_revision|major_revision|reject",
-    "summary": "One paragraph summary...",
+    "summary": "...",
     "confidence": 0.85,
-    "strengths": ["strength 1", "strength 2"],
-    "weaknesses": ["weakness 1", "weakness 2"]
+    "strengths": ["..."],
+    "weaknesses": ["..."]
   },
   "dimensions": [
-    {
-      "dimension": "search_quality",
-      "score": "strong|adequate|weak|not_assessed",
-      "findings": ["finding 1", "finding 2"],
-      "summary": "One sentence summary"
-    }
+    {"dimension": "search_quality", "score": "strong|adequate|weak|not_assessed", "findings": ["..."], "summary": "..."}
   ],
   "claimAssessments": [
-    {
-      "claimText": "The claim...",
-      "quoteVerified": true,
-      "reviewerConfidence": 0.8,
-      "issues": []
-    }
+    {"claimText": "...", "quoteVerified": true, "reviewerConfidence": 0.8, "issues": []}
   ],
   "recommendations": [
-    {
-      "priority": "critical|major|minor|suggestion",
-      "action": "What to do",
-      "rationale": "Why",
-      "dimension": "search_quality"
-    }
+    {"priority": "critical|major|minor|suggestion", "action": "...", "rationale": "...", "dimension": "search_quality"}
   ],
   "tier": "search_only|search_screen|full_pipeline",
   "reviewedAt": "ISO-8601"
 }
 ```
 
-Write `artifacts/review_report.md` — human-readable version with:
-- Overall assessment with decision badge
-- Dimension score table
-- Claim-level assessment table (for full_pipeline tier)
-- Prioritized recommendations list
+Write `artifacts/review_report.md` — human-readable with decision badge, dimension
+score table, claim-level assessment table, and prioritized recommendations.
 
-### Abstract-only mode caveat
-If the synthesis was built from abstracts only (no full-text extraction):
-- Cap reviewer claim confidence at 0.7
-- Add a major finding: "Review based on abstracts only — claim verification limited"
-- Recommend running full-text extraction if available
+If the synthesis was built from abstracts only: cap reviewer claim confidence at 0.7,
+add a major finding about abstract-only limitations.
 
-## Step 7: Report Results
+### Legacy Report
 
-Present a summary:
-- **Decision**: accept / minor_revision / major_revision / reject
-- **Tier**: which review depth was possible
-- **Dimension scores**: table of all 6 dimensions
-- **Top 3 recommendations** by priority
-- **Claim verification**: X of Y claims verified, Z issues found
+Present summary: decision, tier, dimension scores table, top 3 recommendations,
+claim verification stats. Ask if user wants elaboration.
 
-Ask if the user wants elaboration on any dimension or recommendation.
+If decision is `major_revision` or `reject`, suggest re-running `/research-synthesis`
+with recommended changes.
+
+---
 
 ## Completion
 
 ```bash
-_DECISION=$(cat artifacts/review_report.json 2>/dev/null | grep -o '"decision":"[^"]*"' | head -1 | sed 's/.*"decision":"\([^"]*\)".*/\1/' || echo "unknown")
+_DECISION="unknown"
+if [ -f review_report.json ]; then
+  _DECISION=$(grep -o '"decision":"[^"]*"' review_report.json 2>/dev/null | head -1 | sed 's/.*"decision":"\([^"]*\)".*/\1/' || echo "unknown")
+elif [ -f artifacts/review_report.json ]; then
+  _DECISION=$(grep -o '"decision":"[^"]*"' artifacts/review_report.json 2>/dev/null | head -1 | sed 's/.*"decision":"\([^"]*\)".*/\1/' || echo "unknown")
+fi
 echo "REVIEW_DECISION: $_DECISION"
 ```
 
 Report status: **DONE** with the review decision.
-
-If the decision is `major_revision` or `reject`, suggest: "Re-run `/research-synthesis`
-with the recommended changes, then `/research-peer-review` again to verify improvements."

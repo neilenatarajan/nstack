@@ -1,5 +1,13 @@
 # nstack development
 
+## Fork safety
+
+This repo is a fork of `garrytan/gstack`. The `upstream` remote points there.
+**NEVER create PRs, issues, or comments on the upstream repo.** All PRs target
+`neilenatarajan/nstack` (the fork). `gh repo set-default` is configured to
+`neilenatarajan/nstack`, so `gh` commands default to the fork. If you ever need
+to use `--repo` explicitly, use `--repo neilenatarajan/nstack`.
+
 ## Commands
 
 ```bash
