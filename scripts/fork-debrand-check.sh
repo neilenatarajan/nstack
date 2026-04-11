@@ -56,9 +56,9 @@ done
 
 # --- Layer 2: Structural checks (catches refactored content) ---
 
-# Voice section referencing specific individuals
-VOICE_NAMES=$(grep -rl "shaped by .* judgment\|Encode how .* thinks" \
-  --include="*.ts" --include="*.tmpl" \
+# Voice section referencing specific individuals (anchored to upstream format)
+VOICE_NAMES=$(grep -rl "shaped by [A-Z][a-z]*.* judgment\|Encode how [a-z]* thinks" \
+  --include="*.ts" --include="*.tmpl" --include="*.md" \
   "${EXCLUDE_ARGS[@]}" . 2>/dev/null || true)
 if [ -n "$VOICE_NAMES" ]; then
   echo "VIOLATION: Voice section references specific individuals:"
@@ -76,13 +76,23 @@ if [ -n "$YC_URLS" ]; then
   VIOLATIONS=$((VIOLATIONS + 1))
 fi
 
-# Founder/builder tracking infrastructure
-TRACKING=$(grep -rl "founder.*tier\|signal.*count\|builder.*journey\|resources.*shown" \
+# Founder/builder tracking infrastructure (catches renamed variants)
+TRACKING=$(grep -rl "founder.*tier\|signal_count\|builder.*journey\|resources_shown\|\.jsonl.*profile\|\.jsonl.*founder" \
   --include="*.ts" --include="*.tmpl" \
   "${EXCLUDE_ARGS[@]}" . 2>/dev/null || true)
 if [ -n "$TRACKING" ]; then
   echo "WARNING: Possible founder tracking infrastructure:"
   echo "$TRACKING" | sed 's/^/  /'
+  echo "  (Review manually -- may be false positive)"
+fi
+
+# Telemetry binaries (catches any *-telemetry-* pattern, not just gstack)
+TELEMETRY=$(grep -rl "\-telemetry-log\|\-telemetry-sync\|telemetry-ingest" \
+  --include="*.ts" --include="*.tmpl" --include="*.sh" \
+  "${EXCLUDE_ARGS[@]}" . 2>/dev/null || true)
+if [ -n "$TELEMETRY" ]; then
+  echo "WARNING: Possible telemetry infrastructure:"
+  echo "$TELEMETRY" | sed 's/^/  /'
   echo "  (Review manually -- may be false positive)"
 fi
 
