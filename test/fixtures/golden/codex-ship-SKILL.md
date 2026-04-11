@@ -63,16 +63,6 @@ fi
 _ROUTING_DECLINED=$($NSTACK_BIN/nstack-config get routing_declined 2>/dev/null || echo "false")
 echo "HAS_ROUTING: $_HAS_ROUTING"
 echo "ROUTING_DECLINED: $_ROUTING_DECLINED"
-# Vendoring deprecation: detect if CWD has a vendored nstack copy
-_VENDORED="no"
-if [ -d ".agents/skills/nstack" ] && [ ! -L ".agents/skills/nstack" ]; then
-  if [ -f ".agents/skills/nstack/VERSION" ] || [ -d ".agents/skills/nstack/.git" ]; then
-    _VENDORED="yes"
-  fi
-fi
-echo "VENDORED_NSTACK: $_VENDORED"
-# Detect spawned session (OpenClaw or other orchestrator)
-[ -n "$OPENCLAW_SESSION" ] && echo "SPAWNED_SESSION: true" || true
 ```
 
 If `PROACTIVE` is `"false"`, do not proactively suggest nstack skills AND do not
@@ -163,45 +153,6 @@ If B: run `$NSTACK_BIN/nstack-config set routing_declined true`
 Say "No problem. You can add routing rules later by running `nstack-config set routing_declined false` and re-running any skill."
 
 This only happens once per project. If `HAS_ROUTING` is `yes` or `ROUTING_DECLINED` is `true`, skip this entirely.
-
-If `VENDORED_NSTACK` is `yes`: This project has a vendored copy of nstack at
-`.agents/skills/nstack/`. Vendoring is deprecated. We will not keep vendored copies
-up to date, so this project's nstack will fall behind.
-
-Use AskUserQuestion (one-time per project, check for `~/.nstack/.vendoring-warned-$SLUG` marker):
-
-> This project has nstack vendored in `.agents/skills/nstack/`. Vendoring is deprecated.
-> We won't keep this copy up to date, so you'll fall behind on new features and fixes.
->
-> Want to migrate to team mode? It takes about 30 seconds.
-
-Options:
-- A) Yes, migrate to team mode now
-- B) No, I'll handle it myself
-
-If A:
-1. Run `git rm -r .agents/skills/nstack/`
-2. Run `echo '.agents/skills/nstack/' >> .gitignore`
-3. Run `$NSTACK_BIN/nstack-team-init required` (or `optional`)
-4. Run `git add .claude/ .gitignore CLAUDE.md && git commit -m "chore: migrate nstack from vendored to team mode"`
-5. Tell the user: "Done. Each developer now runs: `cd $NSTACK_ROOT && ./setup --team`"
-
-If B: say "OK, you're on your own to keep the vendored copy up to date."
-
-Always run (regardless of choice):
-```bash
-eval "$($NSTACK_BIN/nstack-slug 2>/dev/null)" 2>/dev/null || true
-touch ~/.nstack/.vendoring-warned-${SLUG:-unknown}
-```
-
-This only happens once per project. If the marker file exists, skip entirely.
-
-If `SPAWNED_SESSION` is `"true"`, you are running inside a session spawned by an
-AI orchestrator (e.g., OpenClaw). In spawned sessions:
-- Do NOT use AskUserQuestion for interactive prompts. Auto-choose the recommended option.
-- Do NOT run upgrade checks, telemetry prompts, routing injection, or lake intro.
-- Focus on completing the task and reporting results via prose output.
-- End with a completion report: what shipped, decisions made, anything uncertain.
 
 ## Voice
 
