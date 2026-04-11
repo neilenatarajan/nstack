@@ -268,6 +268,9 @@ fi
 # 3. Ensure ~/.nstack global state directory exists
 mkdir -p "$HOME/.nstack/projects"
 
+# 3a. Configure merge driver for fork-customized files (.gitattributes merge=ours)
+git config merge.ours.driver true 2>/dev/null || true
+
 # ─── Helper: link Claude skill subdirectories into a skills parent directory ──
 # Creates real directories (not symlinks) at the top level with a SKILL.md symlink
 # inside. This ensures Claude discovers them as top-level skills, not nested under
