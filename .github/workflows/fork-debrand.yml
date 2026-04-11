@@ -1,0 +1,14 @@
+name: Fork debrand check
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  debrand:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for upstream marketing content
+        run: bash scripts/fork-debrand-check.sh
