@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.4.0] - 2026-04-10
+
+### Added
+
+- **Upstream sync from garrytan/gstack.** Pulled 25 upstream commits including browser data platform, 4-layer prompt injection defense, TabSession extraction, team install mode, community security fixes, ship re-run verification, and OpenClaw integration v2. All gstack references renamed to nstack automatically.
+- **git rerere enabled.** Conflict resolutions from this sync are recorded. Future upstream merges will auto-resolve repeated rename conflicts.
+
+### Fixed
+
+- Untracked the 61MB compiled `bin/nstack-global-discover` binary from git. The setup script builds from source, so the checked-in binary was redundant. The "no compiled binaries in git" tests now pass.
+- Fixed `bin/nstack-learnings-search` using old `GSTACK_SEARCH_*` environment variable names.
+- Fixed `pair-agent/SKILL.md.tmpl` description tag from `(gstack)` to `(nstack)`.
+- Removed orphaned `supabase/migrations/` directory left over from telemetry removal.
+- Renamed 5 upstream `bin/gstack-*` scripts to `bin/nstack-*`.
+- Renamed openclaw files and skill directories from gstack to nstack naming.
+- Updated telemetry tests to check for session timeline (which replaced telemetry).
+
 ## [0.16.3.0] - 2026-04-10
 
 ### Changed

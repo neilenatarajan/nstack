@@ -484,9 +484,13 @@ describe('host config correctness', () => {
     expect(openclaw.adapter).toContain('openclaw-adapter');
   });
 
-  test('openclaw has staticFiles for SOUL.md', () => {
-    expect(openclaw.staticFiles).toBeDefined();
-    expect(openclaw.staticFiles!['SOUL.md']).toBeDefined();
+  test('openclaw has no staticFiles (SOUL.md removed)', () => {
+    expect(openclaw.staticFiles).toBeUndefined();
+  });
+
+  test('openclaw includeSkills is empty (native skills replaced generated ones)', () => {
+    expect(openclaw.generation.includeSkills).toBeDefined();
+    expect(openclaw.generation.includeSkills!.length).toBe(0);
   });
 
   test('every host has coAuthorTrailer or undefined', () => {

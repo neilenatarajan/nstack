@@ -45,13 +45,14 @@ if [ ${#FILES[@]} -eq 0 ]; then
 fi
 
 # Process all files through bun for JSON parsing, decay, dedup, filtering
-cat "${FILES[@]}" 2>/dev/null | bun -e "
+NSTACK_SEARCH_TYPE="$TYPE" NSTACK_SEARCH_QUERY="$QUERY" NSTACK_SEARCH_LIMIT="$LIMIT" NSTACK_SEARCH_SLUG="$SLUG" NSTACK_SEARCH_CROSS="$CROSS_PROJECT" \
+cat "${FILES[@]}" 2>/dev/null | NSTACK_SEARCH_TYPE="$TYPE" NSTACK_SEARCH_QUERY="$QUERY" NSTACK_SEARCH_LIMIT="$LIMIT" NSTACK_SEARCH_SLUG="$SLUG" NSTACK_SEARCH_CROSS="$CROSS_PROJECT" bun -e "
 const lines = (await Bun.stdin.text()).trim().split('\n').filter(Boolean);
 const now = Date.now();
-const type = '${TYPE}';
-const query = '${QUERY}'.toLowerCase();
-const limit = ${LIMIT};
-const slug = '${SLUG}';
+const type = process.env.NSTACK_SEARCH_TYPE || '';
+const query = (process.env.NSTACK_SEARCH_QUERY || '').toLowerCase();
+const limit = parseInt(process.env.NSTACK_SEARCH_LIMIT || '10', 10);
+const slug = process.env.NSTACK_SEARCH_SLUG || '';
 
 const entries = [];
 for (const line of lines) {
@@ -69,7 +70,7 @@ for (const line of lines) {
 
     // Determine if this is from the current project or cross-project
     // Cross-project entries are tagged for display
-    e._crossProject = !line.includes(slug) && '${CROSS_PROJECT}' === 'true';
+    e._crossProject = !line.includes(slug) && process.env.NSTACK_SEARCH_CROSS === 'true';
 
     entries.push(e);
   } catch {}
