@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.16.5.0] - 2026-04-10
+
+### Changed
+
+- **Fork voice independence.** Replaced upstream's personal voice directive with a generic "Direct, opinionated, craft-obsessed" identity across all 40+ skill files. The fork now has its own voice that doesn't reference upstream maintainers.
+- **"YC Office Hours" renamed to "Office Hours."** Same methodology, no branding.
+
+### Added
+
+- **Fork debrand check** (`scripts/fork-debrand-check.sh`). Scans all source files for upstream marketing patterns. Two layers: exact string matching for known content, structural regex for refactored variants. Catches new files from upstream, not just a known list.
+- **CI enforcement** (`.github/workflows/fork-debrand.yml`). Runs the debrand check on every PR to main. Blocks merge if upstream marketing content leaks in.
+- **`.gitattributes` merge protection.** Fork-customized files (preamble.ts, office-hours template, CLAUDE.md, ETHOS.md) keep our version on merge, reducing manual cleanup.
+- **Upstream merge procedure** documented in CLAUDE.md. Step-by-step guide for merging upstream changes safely.
+
+### Removed
+
+- Builder-profile tracking system (upstream founder signal tracking).
+- YC application pleas, personal notes, and founder resource pools from all skill templates.
+- garryslist.org URLs from ETHOS.md.
+
 ## [0.16.4.1] - 2026-04-10
 
 ### Fixed
