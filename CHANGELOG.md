@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.16.4.1] - 2026-04-10
+
+### Fixed
+
+- **macOS 26+ (Tahoe) binary execution fix.** Bun-compiled binaries now get ad-hoc codesigned after build. Without this, macOS AppleSystemPolicy kills them with SIGKILL (exit 137) before they can start. Affects all five compiled binaries (browse, find-browse, design, research-tools, nstack-global-discover).
+
 ## [0.16.4.0] - 2026-04-10
 
 ### Added
