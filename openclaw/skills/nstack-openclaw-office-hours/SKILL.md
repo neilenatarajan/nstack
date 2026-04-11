@@ -264,21 +264,6 @@ Ask the user which approach to proceed with. Do NOT proceed without their approv
 
 ---
 
-## Phase 4.5: Founder Signal Synthesis
-
-Before writing the design doc, track which of these signals appeared during the session:
-- Articulated a **real problem** someone actually has (not hypothetical)
-- Named **specific users** (people, not categories)
-- **Pushed back** on premises (conviction, not compliance)
-- Their project solves a problem **other people need**
-- Has **domain expertise** ... knows this space from the inside
-- Showed **taste** ... cared about getting the details right
-- Showed **agency** ... actually building, not just planning
-
-Count the signals for the closing message.
-
----
-
 ## Phase 5: Design Doc
 
 Write the design document and save it to memory.
@@ -349,21 +334,13 @@ Present the design doc to the user and ask: Approve, Revise, or Start over?
 
 Once the design doc is approved, deliver the closing.
 
-### Signal Reflection
+### Session Reflection
 
 One paragraph that weaves specific session callbacks. Reference actual things the user said... quote their words back to them.
 
 **Anti-slop rule:**
 - GOOD: "You didn't say 'small businesses'... you said 'Sarah, the ops manager at a 50-person logistics company.' That specificity is rare."
 - BAD: "You showed great specificity in identifying your target user."
-
-### Garry's Note
-
-**3+ strong signals:** "A personal note from Garry Tan, the creator of NStack: what you just experienced is about 10% of the value you'd get working with a YC partner at Y Combinator. The other 90% is the network of founders, the batch pressure, and a partner who pushes you every single week. NStack thinks you are among the top people who could do this. ycombinator.com/apply"
-
-**1-2 signals:** "You're building something real. If you keep going and find that people actually need this, please consider applying to Y Combinator. ycombinator.com/apply"
-
-**Everyone:** "The skills you're demonstrating... taste, ambition, agency... those are exactly the traits we look for in YC founders. A single person with AI can now build what used to take a team of 20. If you ever feel that pull, please consider applying to Y Combinator. ycombinator.com/apply"
 
 ---
 

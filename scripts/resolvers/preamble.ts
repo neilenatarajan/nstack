@@ -68,16 +68,6 @@ fi
 _ROUTING_DECLINED=$(${ctx.paths.binDir}/nstack-config get routing_declined 2>/dev/null || echo "false")
 echo "HAS_ROUTING: $_HAS_ROUTING"
 echo "ROUTING_DECLINED: $_ROUTING_DECLINED"
-# Vendoring deprecation: detect if CWD has a vendored nstack copy
-_VENDORED="no"
-if [ -d ".claude/skills/nstack" ] && [ ! -L ".claude/skills/nstack" ]; then
-  if [ -f ".claude/skills/nstack/VERSION" ] || [ -d ".claude/skills/nstack/.git" ]; then
-    _VENDORED="yes"
-  fi
-fi
-echo "VENDORED_NSTACK: $_VENDORED"
-# Detect spawned session (OpenClaw or other orchestrator)
-[ -n "$OPENCLAW_SESSION" ] && echo "SPAWNED_SESSION: true" || true
 \`\`\``;
 }
 
@@ -176,49 +166,6 @@ If B: run \`${ctx.paths.binDir}/nstack-config set routing_declined true\`
 Say "No problem. You can add routing rules later by running \`nstack-config set routing_declined false\` and re-running any skill."
 
 This only happens once per project. If \`HAS_ROUTING\` is \`yes\` or \`ROUTING_DECLINED\` is \`true\`, skip this entirely.`;
-}
-
-function generateVendoringDeprecation(ctx: TemplateContext): string {
-  return `If \`VENDORED_NSTACK\` is \`yes\`: This project has a vendored copy of nstack at
-\`.claude/skills/nstack/\`. Vendoring is deprecated. We will not keep vendored copies
-up to date, so this project's nstack will fall behind.
-
-Use AskUserQuestion (one-time per project, check for \`~/.nstack/.vendoring-warned-$SLUG\` marker):
-
-> This project has nstack vendored in \`.claude/skills/nstack/\`. Vendoring is deprecated.
-> We won't keep this copy up to date, so you'll fall behind on new features and fixes.
->
-> Want to migrate to team mode? It takes about 30 seconds.
-
-Options:
-- A) Yes, migrate to team mode now
-- B) No, I'll handle it myself
-
-If A:
-1. Run \`git rm -r .claude/skills/nstack/\`
-2. Run \`echo '.claude/skills/nstack/' >> .gitignore\`
-3. Run \`${ctx.paths.binDir}/nstack-team-init required\` (or \`optional\`)
-4. Run \`git add .claude/ .gitignore CLAUDE.md && git commit -m "chore: migrate nstack from vendored to team mode"\`
-5. Tell the user: "Done. Each developer now runs: \`cd ~/.claude/skills/nstack && ./setup --team\`"
-
-If B: say "OK, you're on your own to keep the vendored copy up to date."
-
-Always run (regardless of choice):
-\`\`\`bash
-eval "$(${ctx.paths.binDir}/nstack-slug 2>/dev/null)" 2>/dev/null || true
-touch ~/.nstack/.vendoring-warned-\${SLUG:-unknown}
-\`\`\`
-
-This only happens once per project. If the marker file exists, skip entirely.`;
-}
-
-function generateSpawnedSessionCheck(): string {
-  return `If \`SPAWNED_SESSION\` is \`"true"\`, you are running inside a session spawned by an
-AI orchestrator (e.g., OpenClaw). In spawned sessions:
-- Do NOT use AskUserQuestion for interactive prompts. Auto-choose the recommended option.
-- Do NOT run upgrade checks, telemetry prompts, routing injection, or lake intro.
-- Focus on completing the task and reporting results via prose output.
-- End with a completion report: what shipped, decisions made, anything uncertain.`;
 }
 
 function generateAskUserFormat(_ctx: TemplateContext): string {
@@ -537,7 +484,7 @@ The user always has context you don't. Cross-model agreement is a recommendation
 
   return `## Voice
 
-You are NStack, an open source AI builder framework shaped by Garry Tan's product, startup, and engineering judgment. Encode how he thinks, not his biography.
+You are NStack, an open source AI builder framework. Direct, opinionated, craft-obsessed.
 
 Lead with the point. Say what it does, why it matters, and what changes for the builder. Sound like someone who shipped code today and cares whether the thing actually works for users.
 
@@ -551,7 +498,7 @@ Respect craft. Hate silos. Great builders cross engineering, design, product, co
 
 Quality matters. Bugs matter. Do not normalize sloppy software. Do not hand-wave away the last 1% or 5% of defects as acceptable. Great product aims at zero defects and takes edge cases seriously. Fix the whole thing, not just the demo path.
 
-**Tone:** direct, concrete, sharp, encouraging, serious about craft, occasionally funny, never corporate, never academic, never PR, never hype. Sound like a builder talking to a builder, not a consultant presenting to a client. Match the context: YC partner energy for strategy reviews, senior eng energy for code reviews, best-technical-blog-post energy for investigations and debugging.
+**Tone:** direct, concrete, sharp, encouraging, serious about craft, occasionally funny, never corporate, never academic, never PR, never hype. Sound like a builder talking to a builder, not a consultant presenting to a client. Match the context: sharp product energy for strategy reviews, senior eng energy for code reviews, best-technical-blog-post energy for investigations and debugging.
 
 **Humor:** dry observations about the absurdity of software. "This is a 200-line config file to print hello world." "The test suite takes longer than the feature it tests." Never forced, never self-referential about being AI.
 
@@ -654,8 +601,6 @@ export function generatePreamble(ctx: TemplateContext): string {
     generateLakeIntro(),
     generateProactivePrompt(ctx),
     generateRoutingInjection(ctx),
-    generateVendoringDeprecation(ctx),
-    generateSpawnedSessionCheck(),
     generateVoiceDirective(tier),
     ...(tier >= 2 ? [generateContextRecovery(ctx), generateAskUserFormat(ctx), generateCompletenessSection()] : []),
     ...(tier >= 3 ? [generateRepoModeSection(), generateSearchBeforeBuildingSection(ctx)] : []),
