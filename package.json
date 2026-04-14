@@ -1,6 +1,6 @@
 {
   "name": "nstack",
-  "version": "0.16.6.0",
+  "version": "0.16.6.1",
   "description": "Turn Claude Code into a virtual engineering team. 23 workflow skills, persistent browser, MIT license.",
   "license": "MIT",
   "type": "module",
