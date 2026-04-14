@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.16.5.0] - 2026-04-10
+
+### Changed
+
+- **Fork voice independence.** Replaced upstream's personal voice directive with a generic "Direct, opinionated, craft-obsessed" identity across all 40+ skill files. The fork now has its own voice that doesn't reference upstream maintainers.
+- **"YC Office Hours" renamed to "Office Hours."** Same methodology, no branding.
+
+### Added
+
+- **Fork debrand check** (`scripts/fork-debrand-check.sh`). Scans all source files for upstream marketing patterns. Two layers: exact string matching for known content, structural regex for refactored variants. Catches new files from upstream, not just a known list.
+- **CI enforcement** (`.github/workflows/fork-debrand.yml`). Runs the debrand check on every PR to main. Blocks merge if upstream marketing content leaks in.
+- **`.gitattributes` merge protection.** Fork-customized files (preamble.ts, office-hours template, CLAUDE.md, ETHOS.md) keep our version on merge, reducing manual cleanup.
+- **Upstream merge procedure** documented in CLAUDE.md. Step-by-step guide for merging upstream changes safely.
+
+### Removed
+
+- Builder-profile tracking system (upstream founder signal tracking).
+- YC application pleas, personal notes, and founder resource pools from all skill templates.
+- garryslist.org URLs from ETHOS.md.
+
+## [0.16.4.1] - 2026-04-10
+
+### Fixed
+
+- **macOS 26+ (Tahoe) binary execution fix.** Bun-compiled binaries now get ad-hoc codesigned after build. Without this, macOS AppleSystemPolicy kills them with SIGKILL (exit 137) before they can start. Affects all five compiled binaries (browse, find-browse, design, research-tools, nstack-global-discover).
+
+## [0.16.4.0] - 2026-04-10
+
+### Added
+
+- **Upstream sync from garrytan/gstack.** Pulled 25 upstream commits including browser data platform, 4-layer prompt injection defense, TabSession extraction, team install mode, community security fixes, ship re-run verification, and OpenClaw integration v2. All gstack references renamed to nstack automatically.
+- **git rerere enabled.** Conflict resolutions from this sync are recorded. Future upstream merges will auto-resolve repeated rename conflicts.
+
+### Fixed
+
+- Untracked the 61MB compiled `bin/nstack-global-discover` binary from git. The setup script builds from source, so the checked-in binary was redundant. The "no compiled binaries in git" tests now pass.
+- Fixed `bin/nstack-learnings-search` using old `GSTACK_SEARCH_*` environment variable names.
+- Fixed `pair-agent/SKILL.md.tmpl` description tag from `(gstack)` to `(nstack)`.
+- Removed orphaned `supabase/migrations/` directory left over from telemetry removal.
+- Renamed 5 upstream `bin/gstack-*` scripts to `bin/nstack-*`.
+- Renamed openclaw files and skill directories from gstack to nstack naming.
+- Updated telemetry tests to check for session timeline (which replaced telemetry).
+
 ## [0.16.3.0] - 2026-04-10
 
 ### Changed

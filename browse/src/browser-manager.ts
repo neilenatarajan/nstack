@@ -18,12 +18,12 @@
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page, type Locator, type Cookie } from 'playwright';
 import { addConsoleEntry, addNetworkEntry, addDialogEntry, networkBuffer, type DialogEntry } from './buffers';
 import { validateNavigationUrl } from './url-validation';
+import { TabSession, type RefEntry } from './tab-session';
 
-export interface RefEntry {
-  locator: Locator;
-  role: string;
-  name: string;
-}
+export type { RefEntry };
+
+// Re-export TabSession for consumers
+export { TabSession };
 
 export interface BrowserState {
   cookies: Cookie[];
@@ -38,6 +38,7 @@ export class BrowserManager {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private pages: Map<number, Page> = new Map();
+  private tabSessions: Map<number, TabSession> = new Map();
   private activeTabId: number = 0;
   private nextTabId: number = 1;
   private extraHeaders: Record<string, string> = {};
@@ -46,14 +47,11 @@ export class BrowserManager {
   /** Server port — set after server starts, used by cookie-import-browser command */
   public serverPort: number = 0;
 
-  // ─── Ref Map (snapshot → @e1, @e2, @c1, @c2, ...) ────────
-  private refMap: Map<string, RefEntry> = new Map();
+  // ─── Tab Ownership (multi-agent isolation) ──────────────
+  // Maps tabId → clientId. Unowned tabs (not in this map) are root-only for writes.
+  private tabOwnership: Map<number, string> = new Map();
 
-  // ─── Snapshot Diffing ─────────────────────────────────────
-  // NOT cleared on navigation — it's a text baseline for diffing
-  private lastSnapshot: string | null = null;
-
-  // ─── Dialog Handling ──────────────────────────────────────
+  // ─── Dialog Handling (global, not per-tab) ──────────────────
   private dialogAutoAccept: boolean = true;
   private dialogPromptText: string | null = null;
 
@@ -138,11 +136,11 @@ export class BrowserManager {
    * Get the ref map for external consumers (e.g., /refs endpoint).
    */
   getRefMap(): Array<{ ref: string; role: string; name: string }> {
-    const refs: Array<{ ref: string; role: string; name: string }> = [];
-    for (const [ref, entry] of this.refMap) {
-      refs.push({ ref, role: entry.role, name: entry.name });
+    try {
+      return this.getActiveSession().getRefEntries();
+    } catch {
+      return [];
     }
-    return refs;
   }
 
   async launch() {
@@ -216,7 +214,7 @@ export class BrowserManager {
   async launchHeaded(authToken?: string): Promise<void> {
     // Clear old state before repopulating
     this.pages.clear();
-    this.refMap.clear();
+    this.tabSessions.clear();
     this.nextTabId = 1;
 
     // Find the nstack extension directory for auto-loading
@@ -430,6 +428,7 @@ export class BrowserManager {
     this.context.on('page', (page) => {
       const id = this.nextTabId++;
       this.pages.set(id, page);
+      this.tabSessions.set(id, new TabSession(page));
       this.activeTabId = id;
       this.wirePageEvents(page);
       // Inject indicator on the new tab
@@ -443,6 +442,7 @@ export class BrowserManager {
       const page = existingPages[0];
       const id = this.nextTabId++;
       this.pages.set(id, page);
+      this.tabSessions.set(id, new TabSession(page));
       this.activeTabId = id;
       this.wirePageEvents(page);
       // Inject indicator on restored page (addInitScript only fires on new navigations)
@@ -506,7 +506,7 @@ export class BrowserManager {
   }
 
   // ─── Tab Management ────────────────────────────────────────
-  async newTab(url?: string): Promise<number> {
+  async newTab(url?: string, clientId?: string): Promise<number> {
     if (!this.context) throw new Error('Browser not launched');
 
     // Validate URL before allocating page to avoid zombie tabs on rejection
@@ -517,7 +517,13 @@ export class BrowserManager {
     const page = await this.context.newPage();
     const id = this.nextTabId++;
     this.pages.set(id, page);
+    this.tabSessions.set(id, new TabSession(page));
     this.activeTabId = id;
+
+    // Record tab ownership for multi-agent isolation
+    if (clientId) {
+      this.tabOwnership.set(id, clientId);
+    }
 
     // Wire up console/network/dialog capture
     this.wirePageEvents(page);
@@ -536,6 +542,8 @@ export class BrowserManager {
 
     await page.close();
     this.pages.delete(tabId);
+    this.tabSessions.delete(tabId);
+    this.tabOwnership.delete(tabId);
 
     // Switch to another tab if we closed the active one
     if (tabId === this.activeTabId) {
@@ -550,9 +558,8 @@ export class BrowserManager {
   }
 
   switchTab(id: number, opts?: { bringToFront?: boolean }): void {
-    if (!this.pages.has(id)) throw new Error(`Tab ${id} not found`);
+    if (!this.tabSessions.has(id)) throw new Error(`Tab ${id} not found`);
     this.activeTabId = id;
-    this.activeFrame = null; // Frame context is per-tab
     // Only bring to front when explicitly requested (user-initiated tab switch).
     // Internal tab pinning (BROWSE_TAB) should NOT steal focus.
     if (opts?.bringToFront !== false) {
@@ -582,7 +589,6 @@ export class BrowserManager {
         // Exact match — best case
         if (pageUrl === activeUrl && id !== this.activeTabId) {
           this.activeTabId = id;
-          this.activeFrame = null;
           return;
         }
         // Fuzzy match — origin+pathname (handles query param / fragment differences)
@@ -599,7 +605,6 @@ export class BrowserManager {
     // Fall back to fuzzy match
     if (fuzzyId !== null) {
       this.activeTabId = fuzzyId;
-      this.activeFrame = null;
     }
   }
 
@@ -609,6 +614,34 @@ export class BrowserManager {
 
   getTabCount(): number {
     return this.pages.size;
+  }
+
+  // ─── Tab Ownership (multi-agent isolation) ──────────────
+
+  /** Get the owner of a tab, or null if unowned (root-only for writes). */
+  getTabOwner(tabId: number): string | null {
+    return this.tabOwnership.get(tabId) || null;
+  }
+
+  /**
+   * Check if a client can access a tab.
+   * If ownOnly or isWrite is true, requires ownership.
+   * Otherwise (reads), allow by default.
+   */
+  checkTabAccess(tabId: number, clientId: string, options: { isWrite?: boolean; ownOnly?: boolean } = {}): boolean {
+    if (clientId === 'root') return true;
+    const owner = this.tabOwnership.get(tabId);
+    if (options.ownOnly || options.isWrite) {
+      if (!owner) return false;
+      return owner === clientId;
+    }
+    return true;
+  }
+
+  /** Transfer tab ownership to a different client. */
+  transferTab(tabId: number, toClientId: string): void {
+    if (!this.pages.has(tabId)) throw new Error(`Tab ${tabId} not found`);
+    this.tabOwnership.set(tabId, toClientId);
   }
 
   async getTabListWithTitles(): Promise<Array<{ id: number; url: string; title: string; active: boolean }>> {
@@ -624,11 +657,24 @@ export class BrowserManager {
     return tabs;
   }
 
-  // ─── Page Access ───────────────────────────────────────────
+  // ─── Session Access ────────────────────────────────────────
+  /** Get the TabSession for the active tab. */
+  getActiveSession(): TabSession {
+    const session = this.tabSessions.get(this.activeTabId);
+    if (!session) throw new Error('No active page. Use "browse goto <url>" first.');
+    return session;
+  }
+
+  /** Get a TabSession by tab ID. Used by /batch for parallel tab execution. */
+  getSession(tabId: number): TabSession {
+    const session = this.tabSessions.get(tabId);
+    if (!session) throw new Error(`Tab ${tabId} not found`);
+    return session;
+  }
+
+  // ─── Page Access (delegates to active session) ─────────────
   getPage(): Page {
-    const page = this.pages.get(this.activeTabId);
-    if (!page) throw new Error('No active page. Use "browse goto <url>" first.');
-    return page;
+    return this.getActiveSession().page;
   }
 
   getCurrentUrl(): string {
@@ -639,60 +685,34 @@ export class BrowserManager {
     }
   }
 
-  // ─── Ref Map ──────────────────────────────────────────────
+  // ─── Ref Map (delegates to active session) ──────────────────
   setRefMap(refs: Map<string, RefEntry>) {
-    this.refMap = refs;
+    this.getActiveSession().setRefMap(refs);
   }
 
   clearRefs() {
-    this.refMap.clear();
+    this.getActiveSession().clearRefs();
   }
 
-  /**
-   * Resolve a selector that may be a @ref (e.g., "@e3", "@c1") or a CSS selector.
-   * Returns { locator } for refs or { selector } for CSS selectors.
-   */
   async resolveRef(selector: string): Promise<{ locator: Locator } | { selector: string }> {
-    if (selector.startsWith('@e') || selector.startsWith('@c')) {
-      const ref = selector.slice(1); // "e3" or "c1"
-      const entry = this.refMap.get(ref);
-      if (!entry) {
-        throw new Error(
-          `Ref ${selector} not found. Run 'snapshot' to get fresh refs.`
-        );
-      }
-      const count = await entry.locator.count();
-      if (count === 0) {
-        throw new Error(
-          `Ref ${selector} (${entry.role} "${entry.name}") is stale — element no longer exists. ` +
-          `Run 'snapshot' for fresh refs.`
-        );
-      }
-      return { locator: entry.locator };
-    }
-    return { selector };
+    return this.getActiveSession().resolveRef(selector);
   }
 
-  /** Get the ARIA role for a ref selector, or null for CSS selectors / unknown refs. */
   getRefRole(selector: string): string | null {
-    if (selector.startsWith('@e') || selector.startsWith('@c')) {
-      const entry = this.refMap.get(selector.slice(1));
-      return entry?.role ?? null;
-    }
-    return null;
+    return this.getActiveSession().getRefRole(selector);
   }
 
   getRefCount(): number {
-    return this.refMap.size;
+    return this.getActiveSession().getRefCount();
   }
 
-  // ─── Snapshot Diffing ─────────────────────────────────────
+  // ─── Snapshot Diffing (delegates to active session) ─────────
   setLastSnapshot(text: string | null) {
-    this.lastSnapshot = text;
+    this.getActiveSession().setLastSnapshot(text);
   }
 
   getLastSnapshot(): string | null {
-    return this.lastSnapshot;
+    return this.getActiveSession().getLastSnapshot();
   }
 
   // ─── Dialog Control ───────────────────────────────────────
@@ -744,30 +764,20 @@ export class BrowserManager {
       await page.close().catch(() => {});
     }
     this.pages.clear();
-    this.clearRefs();
+    this.tabSessions.clear();
   }
 
-  // ─── Frame context ─────────────────────────────────
-  private activeFrame: import('playwright').Frame | null = null;
-
+  // ─── Frame context (delegates to active session) ────────────
   setFrame(frame: import('playwright').Frame | null): void {
-    this.activeFrame = frame;
+    this.getActiveSession().setFrame(frame);
   }
 
   getFrame(): import('playwright').Frame | null {
-    return this.activeFrame;
+    return this.getActiveSession().getFrame();
   }
 
-  /**
-   * Returns the active frame if set, otherwise the current page.
-   * Use this for operations that work on both Page and Frame (locator, evaluate, etc.).
-   */
   getActiveFrameOrPage(): import('playwright').Page | import('playwright').Frame {
-    // Auto-recover from detached frames (iframe removed/navigated)
-    if (this.activeFrame?.isDetached()) {
-      this.activeFrame = null;
-    }
-    return this.activeFrame ?? this.getPage();
+    return this.getActiveSession().getActiveFrameOrPage();
   }
 
   // ─── State Save/Restore (shared by recreateContext + handoff) ─
@@ -819,9 +829,18 @@ export class BrowserManager {
       const page = await this.context.newPage();
       const id = this.nextTabId++;
       this.pages.set(id, page);
+      this.tabSessions.set(id, new TabSession(page));
       this.wirePageEvents(page);
 
       if (saved.url) {
+        // Validate the saved URL before navigating — the state file is user-writable and
+        // a tampered URL could navigate to cloud metadata endpoints or file:// URIs.
+        try {
+          await validateNavigationUrl(saved.url);
+        } catch (err: any) {
+          console.warn(`[browse] Skipping invalid URL in state file: ${saved.url} — ${err.message}`);
+          continue;
+        }
         await page.goto(saved.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
       }
 
@@ -878,6 +897,7 @@ export class BrowserManager {
         await page.close().catch(() => {});
       }
       this.pages.clear();
+      this.tabSessions.clear();
       await this.context.close().catch(() => {});
 
       // 3. Create new context with updated settings
@@ -901,6 +921,7 @@ export class BrowserManager {
       // Fallback: create a clean context + blank tab
       try {
         this.pages.clear();
+        this.tabSessions.clear();
         if (this.context) await this.context.close().catch(() => {});
 
         const contextOptions: BrowserContextOptions = {
@@ -986,6 +1007,7 @@ export class BrowserManager {
       this.context = newContext;
       this.browser = newContext.browser();
       this.pages.clear();
+      this.tabSessions.clear();
       this.connectionMode = 'headed';
 
       if (Object.keys(this.extraHeaders).length > 0) {
@@ -1028,9 +1050,13 @@ export class BrowserManager {
    * The meta-command handler calls handleSnapshot() after this.
    */
   resume(): void {
-    this.clearRefs();
+    // Clear refs and frame on the active session
+    try {
+      const session = this.getActiveSession();
+      session.clearRefs();
+      session.setFrame(null);
+    } catch {}
     this.resetFailures();
-    this.activeFrame = null;
   }
 
   getIsHeaded(): boolean {
@@ -1055,11 +1081,12 @@ export class BrowserManager {
 
   // ─── Console/Network/Dialog/Ref Wiring ────────────────────
   private wirePageEvents(page: Page) {
-    // Track tab close — remove from pages map, switch to another tab
+    // Track tab close — remove from pages and sessions maps, switch to another tab
     page.on('close', () => {
       for (const [id, p] of this.pages) {
         if (p === page) {
           this.pages.delete(id);
+          this.tabSessions.delete(id);
           console.log(`[browse] Tab closed (id=${id}, remaining=${this.pages.size})`);
           // If the closed tab was active, switch to another
           if (this.activeTabId === id) {
@@ -1075,8 +1102,13 @@ export class BrowserManager {
     // (lastSnapshot is NOT cleared — it's a text baseline for diffing)
     page.on('framenavigated', (frame) => {
       if (frame === page.mainFrame()) {
-        this.clearRefs();
-        this.activeFrame = null; // Navigation invalidates frame context
+        // Find the TabSession for this page and clear its per-tab state
+        for (const session of this.tabSessions.values()) {
+          if (session.page === page) {
+            session.onMainFrameNavigated();
+            break;
+          }
+        }
       }
     });
 

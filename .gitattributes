@@ -1,0 +1,8 @@
+# Fork-customized files: keep our version on merge to reduce noise.
+# NOT the primary defense — scripts/fork-debrand-check.sh catches everything.
+# If upstream renames these files, the debrand check still works.
+scripts/resolvers/preamble.ts merge=ours
+office-hours/SKILL.md.tmpl merge=ours
+CLAUDE.md merge=ours
+browse/src/welcome.html merge=ours
+ETHOS.md merge=ours

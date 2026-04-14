@@ -8,6 +8,22 @@ This repo is a fork of `garrytan/gstack`. The `upstream` remote points there.
 `neilenatarajan/nstack`, so `gh` commands default to the fork. If you ever need
 to use `--repo` explicitly, use `--repo neilenatarajan/nstack`.
 
+## Upstream merge procedure
+
+This fork regularly merges from `upstream` (garrytan/gstack). After every merge:
+
+1. **Run debrand check:** `bash scripts/fork-debrand-check.sh`
+   - Fix any violations before committing
+   - New files from upstream may contain marketing content the check catches
+2. **Rename gstack → nstack:** Check for any new `gstack` references
+3. **Regenerate skill docs:** `bun run gen:skill-docs`
+4. **Run tests:** `bun test`
+5. **Commit cleanup separately** — bisectable from the merge commit
+
+If the debrand check fails on patterns in a NEW file you haven't seen before,
+that means upstream added a new skill or feature with marketing content.
+Edit the new file to remove the content, then re-run the check.
+
 ## Commands
 
 ```bash
@@ -267,13 +283,14 @@ changes into logical commits and push.
 When reviewing or merging community PRs, **always AskUserQuestion** before accepting
 any commit that:
 
-1. **Touches ETHOS.md** — this file is Garry's personal builder philosophy. No edits
-   from external contributors or AI agents, period.
-2. **Changes Garry's voice** — the tone, humor, directness, and perspective in skill
-   templates, CHANGELOG, and docs are not generic. PRs that rewrite voice to be
-   more "neutral" or "professional" must be rejected.
+1. **Touches ETHOS.md** — this file defines nstack's builder philosophy. No edits
+   from external contributors or AI agents without explicit user approval.
+2. **Re-introduces upstream marketing** — content marketing (YC application pleas,
+   builder-profile tracking, resource pools, personal notes from upstream maintainers)
+   has been deliberately removed from this fork. PRs that re-introduce it must be
+   rejected. Run `scripts/fork-debrand-check.sh` to verify.
 
-Even if the agent strongly believes a change improves the project, these three
+Even if the agent strongly believes a change improves the project, these
 categories require explicit user approval via AskUserQuestion. No exceptions.
 No auto-merging. No "I'll just clean this up."
 
