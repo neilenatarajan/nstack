@@ -1,6 +1,6 @@
 {
   "name": "nstack",
-  "version": "0.16.5.0",
+  "version": "0.16.6.0",
   "description": "NStack — AI workflow skills + fast headless browser. One repo, one install, entire AI engineering workflow.",
   "license": "MIT",
   "type": "module",

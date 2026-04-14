@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.16.6.0] - 2026-04-13
+
+### Added
+
+- **ReviewBench: AI peer review evaluation framework.** Benchmark `/research-peer-review` against human reviewers from ML conferences. Computes inter-rater reliability (Krippendorff's alpha, Cohen's kappa) with bootstrap confidence intervals, calibration analysis, sycophancy detection, and weakness overlap scoring. Pure TypeScript, multi-venue support (ICLR 2024 validated). Run `bun run bench:review -- --venue iclr2024 --sample-size 10 --seed 42` for a pilot, or `--sample-size 100` for publishable results.
+
 ## [0.16.5.0] - 2026-04-10
 
 ### Changed
