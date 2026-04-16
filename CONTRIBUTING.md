@@ -40,8 +40,8 @@ No setup needed. Learnings are logged automatically. View them with `/learn`.
    ln -sfn /path/to/your/nstack-fork .claude/skills/nstack
    cd .claude/skills/nstack && bun install && bun run build && ./setup
    ```
-   Setup creates per-skill directories with SKILL.md symlinks inside (`qa/SKILL.md -> nstack/qa/SKILL.md`)
-   and asks your prefix preference. Pass `--no-prefix` to skip the prompt and use short names.
+   Setup creates per-skill directories with SKILL.md symlinks inside (`nstack-qa/SKILL.md -> nstack/qa/SKILL.md`).
+   All skills are prefixed with `nstack-` (e.g., `/nstack-qa`, `/nstack-ship`).
 5. **Fix the issue** — your changes are live immediately in this project
 6. **Test by actually using nstack** — do the thing that annoyed you, verify it's fixed
 7. **Open a PR from your fork**
@@ -64,9 +64,9 @@ your local edits instead of the global install.
 nstack/                          <- your working tree
 ├── .claude/skills/              <- created by dev-setup (gitignored)
 │   ├── nstack -> ../../         <- symlink back to repo root
-│   ├── review/                  <- real directory (short name, default)
+│   ├── nstack-review/           <- real directory (always nstack- prefixed)
 │   │   └── SKILL.md -> nstack/review/SKILL.md
-│   ├── ship/                    <- or nstack-review/, nstack-ship/ if --prefix
+│   ├── nstack-ship/
 │   │   └── SKILL.md -> nstack/ship/SKILL.md
 │   └── ...                      <- one directory per skill
 ├── review/
@@ -81,9 +81,8 @@ nstack/                          <- your working tree
 
 Setup creates real directories (not symlinks) at the top level with a SKILL.md
 symlink inside. This ensures Claude discovers them as top-level skills, not nested
-under `nstack/`. Names depend on your prefix setting (`~/.nstack/config.yaml`).
-Short names (`/review`, `/ship`) are the default. Run `./setup --prefix` if you
-prefer namespaced names (`/nstack-review`, `/nstack-ship`).
+under `nstack/`. All skills are prefixed with `nstack-` (e.g., `/nstack-review`,
+`/nstack-ship`).
 
 ## Day-to-day workflow
 
@@ -345,13 +344,11 @@ the `nstack/` directory itself. Run `./setup` to create them:
 cd .claude/skills/nstack && bun install && bun run build && ./setup
 ```
 
-Setup will ask whether you want short names (`/qa`) or namespaced (`/nstack-qa`).
-Your choice is saved to `~/.nstack/config.yaml` and remembered for future runs.
-To skip the prompt, pass `--no-prefix` (short names) or `--prefix` (namespaced).
+All skills are prefixed with `nstack-` (e.g., `/nstack-qa`, `/nstack-ship`).
 
 ### Step 3: Develop
 
-Edit a template, run `bun run gen:skill-docs`, and the next `/review` or `/qa`
+Edit a template, run `bun run gen:skill-docs`, and the next `/nstack-review` or `/nstack-qa`
 call picks it up immediately. No restart needed.
 
 ### Going back to the stable global install
@@ -362,19 +359,8 @@ Remove the project-local symlink. Claude Code falls back to `~/.claude/skills/ns
 rm .claude/skills/nstack
 ```
 
-The per-skill directories (`qa/`, `ship/`, etc.) contain SKILL.md symlinks that point
+The per-skill directories (`nstack-qa/`, `nstack-ship/`, etc.) contain SKILL.md symlinks that point
 to `nstack/...`, so they'll resolve to the global install automatically.
-
-### Switching prefix mode
-
-If you installed nstack with one prefix setting and want to switch:
-
-```bash
-cd .claude/skills/nstack && ./setup --no-prefix   # switch to /qa, /ship
-cd .claude/skills/nstack && ./setup --prefix       # switch to /nstack-qa, /nstack-ship
-```
-
-Setup cleans up the old symlinks automatically. No manual cleanup needed.
 
 ### Alternative: point your global install at a branch
 
