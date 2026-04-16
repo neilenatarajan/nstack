@@ -6,11 +6,12 @@
 # by nstack-learnings-search ("latest winner" per key+type).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
-mkdir -p "$NSTACK_HOME/projects/$SLUG"
+source "$SCRIPT_DIR/nstack-project-dir"
+if [ -z "$_NSTACK_PROJ" ]; then
+  echo "nstack-learnings-log: not in a git repository" >&2
+  exit 1
+fi
+mkdir -p "$_NSTACK_PROJ"
 
 INPUT="$1"
 
@@ -29,4 +30,4 @@ if ! printf '%s' "$INPUT" | bun -e "const j=JSON.parse(await Bun.stdin.text()); 
   " 2>/dev/null) || true
 fi
 
-echo "$INPUT" >> "$NSTACK_HOME/projects/$SLUG/learnings.jsonl"
+echo "$INPUT" >> "$_NSTACK_PROJ/learnings.jsonl"

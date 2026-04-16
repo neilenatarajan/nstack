@@ -3,11 +3,13 @@
 # Usage: nstack-review-log '{"skill":"...","timestamp":"...","status":"..."}'
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/nstack-project-dir"
+if [ -z "$_NSTACK_PROJ" ]; then
+  echo "nstack-review-log: not in a git repository" >&2
+  exit 1
+fi
 eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
-mkdir -p "$NSTACK_HOME/projects/$SLUG"
+mkdir -p "$_NSTACK_PROJ"
 
 # Validate: input must be parseable JSON (reject malformed or injection attempts)
 INPUT="$1"
@@ -17,4 +19,4 @@ if ! printf '%s' "$INPUT" | bun -e "JSON.parse(await Bun.stdin.text())" 2>/dev/n
   exit 1
 fi
 
-echo "$INPUT" >> "$NSTACK_HOME/projects/$SLUG/$BRANCH-reviews.jsonl"
+echo "$INPUT" >> "$_NSTACK_PROJ/$BRANCH-reviews.jsonl"

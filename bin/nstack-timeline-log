@@ -8,11 +8,11 @@
 # Validation failure → skip silently (non-blocking).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
-mkdir -p "$NSTACK_HOME/projects/$SLUG"
+source "$SCRIPT_DIR/nstack-project-dir"
+if [ -z "$_NSTACK_PROJ" ]; then
+  exit 0  # skip silently outside git repos, non-blocking
+fi
+mkdir -p "$_NSTACK_PROJ"
 
 INPUT="$1"
 
@@ -33,4 +33,4 @@ if ! printf '%s' "$INPUT" | bun -e "const j=JSON.parse(await Bun.stdin.text()); 
   " 2>/dev/null) || true
 fi
 
-echo "$INPUT" >> "$NSTACK_HOME/projects/$SLUG/timeline.jsonl"
+echo "$INPUT" >> "$_NSTACK_PROJ/timeline.jsonl"

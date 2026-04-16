@@ -2,15 +2,13 @@
 # nstack-learnings-search — read and filter project learnings
 # Usage: nstack-learnings-search [--type TYPE] [--query KEYWORD] [--limit N] [--cross-project]
 #
-# Reads ~/.nstack/projects/$SLUG/learnings.jsonl, applies confidence decay,
+# Reads .nstack/learnings.jsonl (in repo root), applies confidence decay,
 # resolves duplicates (latest winner per key+type), and outputs formatted text.
 # Exit 0 silently if no learnings file exists.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/nstack-project-dir"
 eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
 
 TYPE=""
 QUERY=""
@@ -27,15 +25,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-LEARNINGS_FILE="$NSTACK_HOME/projects/$SLUG/learnings.jsonl"
+LEARNINGS_FILE=""
+[ -n "$_NSTACK_PROJ" ] && LEARNINGS_FILE="$_NSTACK_PROJ/learnings.jsonl"
 
 # Collect all JSONL files to search
 FILES=()
-[ -f "$LEARNINGS_FILE" ] && FILES+=("$LEARNINGS_FILE")
+[ -n "$LEARNINGS_FILE" ] && [ -f "$LEARNINGS_FILE" ] && FILES+=("$LEARNINGS_FILE")
 
 if [ "$CROSS_PROJECT" = true ]; then
-  # Add other projects' learnings (max 5, sorted by mtime)
-  for f in $(find "$NSTACK_HOME/projects" -name "learnings.jsonl" -not -path "*/$SLUG/*" 2>/dev/null | head -5); do
+  # Add other projects' learnings from global store (max 5, sorted by mtime)
+  NSTACK_GLOBAL="${NSTACK_STATE_DIR:-$HOME/.nstack}"
+  for f in $(find "$NSTACK_GLOBAL/projects" -name "learnings.jsonl" 2>/dev/null | head -5); do
+    # Skip if same as local file
+    [ "$f" = "$LEARNINGS_FILE" ] && continue
     FILES+=("$f")
   done
 fi
