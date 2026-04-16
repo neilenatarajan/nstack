@@ -91,8 +91,6 @@ export interface HostConfig {
 
   // --- Install Behavior ---
   install: {
-    /** Whether nstack-config skill_prefix applies (Claude only). */
-    prefixable: boolean;
     /** How skills are linked into the host dir. */
     linkingStrategy: 'real-dir-symlink' | 'symlink-generated';
   };

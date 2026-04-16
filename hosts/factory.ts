@@ -51,7 +51,6 @@ const factory: HostConfig = {
   },
 
   install: {
-    prefixable: false,
     linkingStrategy: 'symlink-generated',
   },
 

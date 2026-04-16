@@ -1,7 +1,7 @@
 /**
  * Learnings resolver — cross-skill institutional memory
  *
- * Learnings are stored per-project at ~/.nstack/projects/{slug}/learnings.jsonl.
+ * Learnings are stored per-project at .nstack/learnings.jsonl in the repo root.
  * Each entry is a JSONL line with: ts, skill, type, key, insight, confidence,
  * source, branch, commit, files[].
  *

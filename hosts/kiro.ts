@@ -38,7 +38,6 @@ const kiro: HostConfig = {
   },
 
   install: {
-    prefixable: false,
     linkingStrategy: 'symlink-generated',
   },
 

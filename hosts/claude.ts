@@ -34,7 +34,6 @@ const claude: HostConfig = {
   },
 
   install: {
-    prefixable: true,
     linkingStrategy: 'real-dir-symlink',
   },
 

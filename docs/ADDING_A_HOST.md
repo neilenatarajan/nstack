@@ -78,7 +78,6 @@ const myhost: HostConfig = {
   },
 
   install: {
-    prefixable: false,
     linkingStrategy: 'symlink-generated',
   },
 
