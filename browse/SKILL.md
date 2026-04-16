@@ -31,10 +31,8 @@ _PROACTIVE=$(~/.claude/skills/nstack/bin/nstack-config get proactive 2>/dev/null
 _PROACTIVE_PROMPTED=$([ -f ~/.nstack/.proactive-prompted ] && echo "yes" || echo "no")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
-_SKILL_PREFIX=$(~/.claude/skills/nstack/bin/nstack-config get skill_prefix 2>/dev/null || echo "false")
 echo "PROACTIVE: $_PROACTIVE"
 echo "PROACTIVE_PROMPTED: $_PROACTIVE_PROMPTED"
-echo "SKILL_PREFIX: $_SKILL_PREFIX"
 source <(~/.claude/skills/nstack/bin/nstack-repo-mode 2>/dev/null) || true
 REPO_MODE=${REPO_MODE:-unknown}
 echo "REPO_MODE: $REPO_MODE"
@@ -42,9 +40,12 @@ _LAKE_SEEN=$([ -f ~/.nstack/.completeness-intro-seen ] && echo "yes" || echo "no
 echo "LAKE_INTRO: $_LAKE_SEEN"
 _TEL_START=$(date +%s)
 _SESSION_ID="$$-$(date +%s)"
-# Learnings count
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" 2>/dev/null || true
-_LEARN_FILE="${NSTACK_HOME:-$HOME/.nstack}/projects/${SLUG:-unknown}/learnings.jsonl"
+# Learnings count — resolve project data dir (local .nstack/ > global fallback)
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_NSTACK_PROJ=""
+[ -n "$_ROOT" ] && _NSTACK_PROJ="$_ROOT/.nstack"
+_LEARN_FILE=""
+[ -n "$_NSTACK_PROJ" ] && _LEARN_FILE="$_NSTACK_PROJ/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
@@ -68,14 +69,14 @@ echo "ROUTING_DECLINED: $_ROUTING_DECLINED"
 
 If `PROACTIVE` is `"false"`, do not proactively suggest nstack skills AND do not
 auto-invoke skills based on conversation context. Only run skills the user explicitly
-types (e.g., /qa, /ship). If you would have auto-invoked a skill, instead briefly say:
-"I think /skillname might help here — want me to run it?" and wait for confirmation.
+types (e.g., /nstack-qa, /nstack-ship). If you would have auto-invoked a skill, instead briefly say:
+"I think /nstack-skillname might help here — want me to run it?" and wait for confirmation.
 The user opted out of proactive behavior.
 
-If `SKILL_PREFIX` is `"true"`, the user has namespaced skill names. When suggesting
-or invoking other nstack skills, use the `/nstack-` prefix (e.g., `/nstack-qa` instead
-of `/qa`, `/nstack-ship` instead of `/ship`). Disk paths are unaffected — always use
-`~/.claude/skills/nstack/[skill-name]/SKILL.md` for reading skill files.
+Skills are always prefixed with `nstack-`. When suggesting or invoking nstack skills,
+use the `/nstack-` prefix (e.g., `/nstack-qa`, `/nstack-ship`, `/nstack-review`).
+Disk paths are unaffected — always use `~/.claude/skills/nstack/[skill-name]/SKILL.md`
+for reading skill files.
 
 If output shows `UPGRADE_AVAILABLE <old> <new>`: read `~/.claude/skills/nstack/nstack-upgrade/SKILL.md` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If `JUST_UPGRADED <from> <to>`: tell user "Running nstack v{to} (just updated!)" and continue.
 
