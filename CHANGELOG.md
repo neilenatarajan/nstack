@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.17.0.0] - 2026-04-16
+
+### Added
+
+- **Git-style layered config.** `nstack-config get` now resolves from two files: `.nstack/config.yaml` in your repo root (project-local) takes priority over `~/.nstack/config.yaml` (global). `nstack-config set` supports `--local` and `--global` flags. Default writes go to local when in a git repo.
+- **Project data stays local.** Learnings, timelines, reviews, design docs, and checkpoints now live in `.nstack/` at your project root instead of the global `~/.nstack/projects/` directory. Project-scoped agents (like Conductor workspaces) can now use nstack without needing global filesystem permissions.
+- **Shared path resolution helper.** New `bin/nstack-project-dir` sourced by all data scripts for consistent `.nstack/` path resolution with `NSTACK_HOME` env var support for testing.
+- **Upgrade migration script** (`nstack-upgrade/migrations/v0.17.0.0.sh`) handles slug cache migration and config cleanup.
+
+### Changed
+
+- **Skills are always prefixed.** Every skill is now permanently namespaced as `/nstack-qa`, `/nstack-ship`, etc. The `skill_prefix` config option and setup prompt are removed. No more accidental toggling on upgrades.
+- **Setup is non-interactive.** The only interactive prompt (skill prefix choice) is gone. `./setup` just installs and goes.
+- **Slug cache migrated.** `~/.gstack/slug-cache/` (rebrand leftover) automatically migrates to `~/.nstack/slug-cache/` on first use.
+
+### Removed
+
+- `skill_prefix` config key and the setup prompt that asked about it.
+- `telemetry` config key (vestigial from upstream, did nothing).
+- `SKILL_PREFIX` conditional in all skill preambles.
+
+### For contributors
+
+- `nstack-relink` simplified to always-prefixed mode (removed flat-name branching).
+- `nstack-patch-names` simplified to prefix-only (removed unprefixed path).
+- 6 resolvers updated to use local `.nstack/` paths (`preamble.ts`, `utility.ts`, `review.ts`, `testing.ts`, `design.ts`, `learnings.ts`).
+- All 37 SKILL.md files regenerated. Golden test fixtures updated.
+- Test files updated for flat `NSTACK_HOME` structure (no `projects/$SLUG` nesting).
+
 ## [0.16.6.1] - 2026-04-13
 
 ### Changed
