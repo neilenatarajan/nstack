@@ -24,6 +24,12 @@ If the debrand check fails on patterns in a NEW file you haven't seen before,
 that means upstream added a new skill or feature with marketing content.
 Edit the new file to remove the content, then re-run the check.
 
+## Fork Management
+
+nstack is a fork of garrytan/gstack. See `FORK_MANIFEST.md` for the full divergence
+inventory, banned patterns, and merge checklist. Run `bin/verify-fork-integrity` after
+every upstream merge to confirm fork invariants are intact.
+
 ## Commands
 
 ```bash

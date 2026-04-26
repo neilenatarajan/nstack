@@ -1,0 +1,223 @@
+#!/bin/bash
+#
+# verify-fork-integrity — Post-merge verification for nstack fork
+#
+# Checks that nstack's intentional divergences from upstream gstack are intact.
+# Run after every upstream merge. See FORK_MANIFEST.md for full documentation.
+#
+# Usage:
+#   bin/verify-fork-integrity           Run all checks
+#   bin/verify-fork-integrity --help    Show this help
+#   bin/verify-fork-integrity --self-test  Verify grep patterns work
+#   bin/verify-fork-integrity --skip=bun-test  Skip a specific check
+#
+
+set -euo pipefail
+
+# Navigate to repo root
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "$REPO_ROOT" ]; then
+  echo "ERROR: Not in a git repository" >&2
+  exit 1
+fi
+cd "$REPO_ROOT"
+
+# Parse arguments
+SKIP=""
+SELF_TEST=false
+for arg in "$@"; do
+  case "$arg" in
+    --help|-h|-help)
+      echo "verify-fork-integrity — Post-merge verification for nstack fork"
+      echo ""
+      echo "Usage:"
+      echo "  bin/verify-fork-integrity              Run all 6 checks"
+      echo "  bin/verify-fork-integrity --self-test   Verify grep patterns catch banned strings"
+      echo "  bin/verify-fork-integrity --skip=NAME   Skip a check (skill-dirs, research-src,"
+      echo "                                          resolver-exports, banned-patterns,"
+      echo "                                          gen-skill-docs, bun-test)"
+      echo ""
+      echo "Checks:"
+      echo "  1. skill-dirs        Custom skill directories exist with SKILL.md + SKILL.md.tmpl"
+      echo "  2. research-src      Research binary source exists at research/src/"
+      echo "  3. resolver-exports  Writing resolvers exported from scripts/resolvers/index.ts"
+      echo "  4. banned-patterns   No banned YC/promotional patterns in source files"
+      echo "  5. gen-skill-docs    bun run gen:skill-docs succeeds"
+      echo "  6. bun-test          bun test passes"
+      echo ""
+      echo "See FORK_MANIFEST.md for full documentation."
+      exit 0
+      ;;
+    --self-test)
+      SELF_TEST=true
+      ;;
+    --skip=*)
+      SKIP="$SKIP ${arg#--skip=}"
+      ;;
+  esac
+done
+
+# Banned patterns (single source of truth)
+BANNED_PATTERNS=(
+  "garryslist.org"
+  "consider applying to YC"
+  "founder signal"
+  "open https://garryslist.org"
+)
+
+# Self-test mode
+if [ "$SELF_TEST" = true ]; then
+  echo "Running self-test..."
+  TMPFILE=$(mktemp /tmp/verify-fork-self-test-XXXXXXXX.ts)
+  PASS=0
+  FAIL=0
+  for pattern in "${BANNED_PATTERNS[@]}"; do
+    echo "// test line: $pattern" > "$TMPFILE"
+    if grep -qF "$pattern" "$TMPFILE" 2>/dev/null; then
+      echo "  PASS: grep catches \"$pattern\""
+      PASS=$((PASS + 1))
+    else
+      echo "  FAIL: grep MISSED \"$pattern\""
+      FAIL=$((FAIL + 1))
+    fi
+  done
+  rm -f "$TMPFILE"
+  echo ""
+  if [ "$FAIL" -eq 0 ]; then
+    echo "Self-test passed: $PASS/$PASS patterns detected"
+    exit 0
+  else
+    echo "Self-test FAILED: $FAIL patterns not detected"
+    exit 1
+  fi
+fi
+
+# Tracking
+PASSED=0
+FAILED=0
+SKIPPED=0
+
+pass() { echo "PASS: $1"; PASSED=$((PASSED + 1)); }
+fail() { echo "FAIL: $1"; FAILED=$((FAILED + 1)); }
+skip() { echo "SKIP: $1"; SKIPPED=$((SKIPPED + 1)); }
+
+echo "=== nstack fork integrity check ==="
+echo ""
+
+# Check 1: Custom skill directories
+if echo "$SKIP" | grep -qw "skill-dirs"; then
+  skip "skill-dirs — skipped by user"
+else
+  CHECK1_OK=true
+  for dir in research-synthesis research-peer-review write-draft write-review; do
+    if [ ! -f "$dir/SKILL.md" ] || [ ! -f "$dir/SKILL.md.tmpl" ]; then
+      fail "skill-dirs — $dir/ missing SKILL.md or SKILL.md.tmpl"
+      CHECK1_OK=false
+    fi
+  done
+  if [ "$CHECK1_OK" = true ]; then
+    pass "skill-dirs — all 4 custom skill directories intact"
+  fi
+fi
+
+# Check 2: Research binary source
+if echo "$SKIP" | grep -qw "research-src"; then
+  skip "research-src — skipped by user"
+else
+  if [ -d "research/src" ] && [ -f "research/src/cli.ts" ]; then
+    pass "research-src — research/src/ exists with cli.ts"
+  else
+    fail "research-src — research/src/cli.ts not found"
+  fi
+fi
+
+# Check 3: Writing resolver exports
+if echo "$SKIP" | grep -qw "resolver-exports"; then
+  skip "resolver-exports — skipped by user"
+else
+  MISSING_EXPORTS=""
+  for resolver in VOICE_PROFILE_CHECK FORMAT_DETECTION SLOP_RULES; do
+    if ! grep -qF "$resolver" scripts/resolvers/index.ts 2>/dev/null; then
+      MISSING_EXPORTS="$MISSING_EXPORTS $resolver"
+    fi
+  done
+  if [ -z "$MISSING_EXPORTS" ]; then
+    pass "resolver-exports — VOICE_PROFILE_CHECK, FORMAT_DETECTION, SLOP_RULES all exported"
+  else
+    fail "resolver-exports — missing from scripts/resolvers/index.ts:$MISSING_EXPORTS"
+  fi
+fi
+
+# Check 4: Banned patterns
+if echo "$SKIP" | grep -qw "banned-patterns"; then
+  skip "banned-patterns — skipped by user"
+else
+  FOUND_BANNED=false
+  for pattern in "${BANNED_PATTERNS[@]}"; do
+    # Search resolvers and templates, excluding this script and the manifest
+    MATCHES=$(grep -rnF "$pattern" \
+      scripts/resolvers/ \
+      --include="*.ts" \
+      2>/dev/null \
+    || true)
+
+    # Also search SKILL.md.tmpl files
+    TMPL_MATCHES=$(find . -name "SKILL.md.tmpl" -not -path "./node_modules/*" \
+      -exec grep -lF "$pattern" {} \; 2>/dev/null || true)
+
+    if [ -n "$MATCHES" ]; then
+      while IFS= read -r line; do
+        fail "banned-patterns — \"$pattern\" found in $line. See FORK_MANIFEST.md \"Banned Patterns\" section."
+        FOUND_BANNED=true
+      done <<< "$MATCHES"
+    fi
+    if [ -n "$TMPL_MATCHES" ]; then
+      while IFS= read -r file; do
+        fail "banned-patterns — \"$pattern\" found in $file. See FORK_MANIFEST.md \"Banned Patterns\" section."
+        FOUND_BANNED=true
+      done <<< "$TMPL_MATCHES"
+    fi
+  done
+  if [ "$FOUND_BANNED" = false ]; then
+    pass "banned-patterns — no banned YC/promotional content found"
+  fi
+fi
+
+# Check 5: gen:skill-docs
+if echo "$SKIP" | grep -qw "gen-skill-docs"; then
+  skip "gen-skill-docs — skipped by user"
+else
+  if bun run gen:skill-docs --host claude >/dev/null 2>&1; then
+    pass "gen-skill-docs — SKILL.md regeneration succeeded"
+  else
+    fail "gen-skill-docs — bun run gen:skill-docs failed. Run manually to see errors."
+  fi
+fi
+
+# Check 6: bun test
+if echo "$SKIP" | grep -qw "bun-test"; then
+  skip "bun-test — skipped by user"
+else
+  if bun test >/dev/null 2>&1; then
+    pass "bun-test — all tests passed"
+  else
+    fail "bun-test — tests failed. Run 'bun test' manually to see errors."
+  fi
+fi
+
+# Summary
+echo ""
+echo "=== Summary ==="
+echo "PASSED: $PASSED"
+echo "FAILED: $FAILED"
+echo "SKIPPED: $SKIPPED"
+
+if [ "$FAILED" -gt 0 ]; then
+  echo ""
+  echo "Fork integrity check FAILED. See FORK_MANIFEST.md for resolution guidance."
+  exit 1
+else
+  echo ""
+  echo "Fork integrity check PASSED."
+  exit 0
+fi
