@@ -460,3 +460,8 @@ Key routing rules:
 - Architecture review → invoke plan-eng-review
 - Save progress, checkpoint, resume → invoke checkpoint
 - Code quality, health check → invoke health
+- Post ideas, "what should I post", LinkedIn ideas, content brainstorming → invoke content-ideation
+- "Write a post/draft/blog/memo/newsletter/linkedin post" → invoke write-draft
+- "Review this draft", "edit my writing", "polish this prose" → invoke write-review
+- Literature review, academic search, "what does the research say" → invoke research-synthesis
+- Peer review a paper or research artifact → invoke research-peer-review

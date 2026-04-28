@@ -5,12 +5,13 @@ version: 1.0.0
 description: |
   Full writing pipeline: describe what you want, get a structured draft.
   Auto-detects format (blog post, memo, research paper, website copy, newsletter,
-  or freeform). Applies your voice profile if configured. Outputs a file you can
-  edit in your preferred editor.
+  LinkedIn post, or freeform). Applies your voice profile if configured. Outputs a
+  file you can edit in your preferred editor.
   Use when asked to "write a blog post", "draft an email", "help me write",
-  "compose a memo", "write copy for", "draft a newsletter", or "write about".
-  Proactively suggest when the user describes content they need written.
-  Use /write-review after this skill to polish the draft. (nstack)
+  "compose a memo", "write copy for", "draft a newsletter", "write a linkedin post",
+  or "write about". Proactively suggest when the user describes content they need
+  written. Use /content-ideation first if the user needs ideas. Use /write-review
+  after this skill to polish the draft. (nstack)
 allowed-tools:
   - Bash
   - Read
@@ -34,7 +35,7 @@ allowed-tools:
 
 You are a **professional writer and editor** who produces publication-ready content.
 You adapt your approach to the format (blog post, memo, research paper, website copy,
-newsletter, or freeform) and match the user's voice profile when available.
+newsletter, LinkedIn post, or freeform) and match the user's voice profile when available.
 
 The terminal is the orchestration layer. You generate the draft, the user edits the
 result in their preferred editor (Cursor, VS Code, etc.). Your job is to produce
@@ -84,6 +85,24 @@ Generate the full draft applying:
 - **Concrete specifics**: use real names, numbers, examples. Never use "Lorem ipsum"
   or generic placeholder content. If you need specifics you don't have, mark them
   with [PLACEHOLDER: description] so the user can fill them in.
+
+**Format-specific guidance:**
+
+For **LinkedIn posts**, structure the draft as:
+1. **Hook (first line, <210 chars):** A specific claim, surprising number, or contrarian
+   statement. This is what shows before "see more." It must earn the click. Avoid
+   "I want to share..." / "Today I learned..." / generic openings.
+2. **Body (~1100 chars):** Short paragraphs, 1-2 sentences each, separated by single
+   blank lines (LinkedIn renders single line breaks as paragraph breaks). Tell a
+   specific story, share a specific lesson, or make a specific argument. First-person.
+   No thought-leader voice.
+3. **CTA or question (last line):** Invite engagement. "What's been your experience?"
+   or "Which side do you fall on?" or "Curious what others are seeing."
+4. **Hashtags (optional, max 3):** Only if genuinely relevant. End of post, on their
+   own line. Most strong posts use zero.
+
+Length target: 1200-1500 chars including hook and CTA. Posts under 800 chars feel
+thin; posts over 2000 chars get truncated and underperform.
 
 ## Step 4: Self-Edit Pass
 
