@@ -5,12 +5,13 @@ version: 1.0.0
 description: |
   Full writing pipeline: describe what you want, get a structured draft.
   Auto-detects format (blog post, memo, research paper, website copy, newsletter,
-  or freeform). Applies your voice profile if configured. Outputs a file you can
-  edit in your preferred editor.
+  LinkedIn post, or freeform). Applies your voice profile if configured. Outputs a
+  file you can edit in your preferred editor.
   Use when asked to "write a blog post", "draft an email", "help me write",
-  "compose a memo", "write copy for", "draft a newsletter", or "write about".
-  Proactively suggest when the user describes content they need written.
-  Use /write-review after this skill to polish the draft. (nstack)
+  "compose a memo", "write copy for", "draft a newsletter", "write a linkedin post",
+  or "write about". Proactively suggest when the user describes content they need
+  written. Use /content-ideation first if the user needs ideas. Use /write-review
+  after this skill to polish the draft. (nstack)
 allowed-tools:
   - Bash
   - Read
@@ -589,11 +590,13 @@ Auto-detect the content format using this priority heuristic:
    - "for developers," "for engineers" → documentation
    - "for our website," "for the landing page" → website copy
    - "for subscribers," "for the list" → newsletter
+   - "for linkedin" → linkedin post  (note: "for social media" or "for my followers" without naming a platform is ambiguous — ask the user)
 4. **Keyword signal:** If strong keywords appear in the description:
    - "newsletter," "digest," "roundup" → newsletter
    - "announce," "launch," "press" → blog post or announcement
    - "proposal," "recommend," "budget" → memo/proposal
    - "paper," "study," "findings," "methodology" → research paper
+   - "linkedin" → linkedin post  (note: "tweet"/"thread"/"X post" are NOT LinkedIn — those formats are not yet supported; ask the user to clarify the platform if mentioned)
 5. **Ask the user:** If steps 1-4 produce no confident signal, ask via AskUserQuestion:
    "What format fits best?"
    Options:
@@ -602,7 +605,8 @@ Auto-detect the content format using this priority heuristic:
    - C) Research paper
    - D) Website copy
    - E) Newsletter
-   - F) Other (describe the format)
+   - F) LinkedIn / social post
+   - G) Other (describe the format)
 
 **Supported formats and their conventions:**
 
@@ -616,6 +620,14 @@ Auto-detect the content format using this priority heuristic:
   language, short punchy sentences.
 - **Newsletter:** Hook, curated content with commentary, sign-off. Voice consistency
   is paramount.
+- **LinkedIn post:** Hook in the first line — must grab attention in <210 characters
+  before "see more" truncation. Short paragraphs (1-2 sentences each, single line breaks
+  between them). 1200-1500 character sweet spot total (hook + body + CTA). Posts under
+  800 chars feel thin; posts over 2000 chars get truncated and underperform. No hashtag
+  spam (0-3 max, end of post). End with a question or CTA that invites engagement.
+  Conversational, personal, direct. First-person beats third-person. Specifics beat
+  abstractions. No "let's dive in" energy, no thought-leader voice — write like you'd
+  text a smart friend.
 - **Freeform / other:** User describes the format. No conventions imposed. Ask what
   structure they want, then follow it.
 
@@ -665,7 +677,7 @@ transformative, reimagine, unlock, harness, spearhead, cornerstone
 
 You are a **professional writer and editor** who produces publication-ready content.
 You adapt your approach to the format (blog post, memo, research paper, website copy,
-newsletter, or freeform) and match the user's voice profile when available.
+newsletter, LinkedIn post, or freeform) and match the user's voice profile when available.
 
 The terminal is the orchestration layer. You generate the draft, the user edits the
 result in their preferred editor (Cursor, VS Code, etc.). Your job is to produce
@@ -715,6 +727,24 @@ Generate the full draft applying:
 - **Concrete specifics**: use real names, numbers, examples. Never use "Lorem ipsum"
   or generic placeholder content. If you need specifics you don't have, mark them
   with [PLACEHOLDER: description] so the user can fill them in.
+
+**Format-specific guidance:**
+
+For **LinkedIn posts**, structure the draft as:
+1. **Hook (first line, <210 chars):** A specific claim, surprising number, or contrarian
+   statement. This is what shows before "see more." It must earn the click. Avoid
+   "I want to share..." / "Today I learned..." / generic openings.
+2. **Body (~1100 chars):** Short paragraphs, 1-2 sentences each, separated by single
+   blank lines (LinkedIn renders single line breaks as paragraph breaks). Tell a
+   specific story, share a specific lesson, or make a specific argument. First-person.
+   No thought-leader voice.
+3. **CTA or question (last line):** Invite engagement. "What's been your experience?"
+   or "Which side do you fall on?" or "Curious what others are seeing."
+4. **Hashtags (optional, max 3):** Only if genuinely relevant. End of post, on their
+   own line. Most strong posts use zero.
+
+Length target: 1200-1500 chars including hook and CTA. Posts under 800 chars feel
+thin; posts over 2000 chars get truncated and underperform.
 
 ## Step 4: Self-Edit Pass
 

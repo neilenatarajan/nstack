@@ -189,11 +189,13 @@ Auto-detect the content format using this priority heuristic:
    - "for developers," "for engineers" → documentation
    - "for our website," "for the landing page" → website copy
    - "for subscribers," "for the list" → newsletter
+   - "for linkedin" → linkedin post  (note: "for social media" or "for my followers" without naming a platform is ambiguous — ask the user)
 4. **Keyword signal:** If strong keywords appear in the description:
    - "newsletter," "digest," "roundup" → newsletter
    - "announce," "launch," "press" → blog post or announcement
    - "proposal," "recommend," "budget" → memo/proposal
    - "paper," "study," "findings," "methodology" → research paper
+   - "linkedin" → linkedin post  (note: "tweet"/"thread"/"X post" are NOT LinkedIn — those formats are not yet supported; ask the user to clarify the platform if mentioned)
 5. **Ask the user:** If steps 1-4 produce no confident signal, ask via AskUserQuestion:
    "What format fits best?"
    Options:
@@ -202,7 +204,8 @@ Auto-detect the content format using this priority heuristic:
    - C) Research paper
    - D) Website copy
    - E) Newsletter
-   - F) Other (describe the format)
+   - F) LinkedIn / social post
+   - G) Other (describe the format)
 
 **Supported formats and their conventions:**
 
@@ -216,6 +219,14 @@ Auto-detect the content format using this priority heuristic:
   language, short punchy sentences.
 - **Newsletter:** Hook, curated content with commentary, sign-off. Voice consistency
   is paramount.
+- **LinkedIn post:** Hook in the first line — must grab attention in <210 characters
+  before "see more" truncation. Short paragraphs (1-2 sentences each, single line breaks
+  between them). 1200-1500 character sweet spot total (hook + body + CTA). Posts under
+  800 chars feel thin; posts over 2000 chars get truncated and underperform. No hashtag
+  spam (0-3 max, end of post). End with a question or CTA that invites engagement.
+  Conversational, personal, direct. First-person beats third-person. Specifics beat
+  abstractions. No "let's dive in" energy, no thought-leader voice — write like you'd
+  text a smart friend.
 - **Freeform / other:** User describes the format. No conventions imposed. Ask what
   structure they want, then follow it.`;
 }
