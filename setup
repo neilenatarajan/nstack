@@ -706,6 +706,18 @@ if [ ! -f "$HOME/.nstack/.welcome-seen" ]; then
   log "  Welcome! Run /nstack-upgrade anytime to stay current."
   touch "$HOME/.nstack/.welcome-seen"
 fi
+# Cross-project sharing: tell user the default + how to change it.
+# v0.18+: cross_project_learnings is OFF by default (privacy-first). Per-repo
+# prompts fire on first use. This setup-time message avoids "where did the
+# prompt go?" confusion.
+if [ ! -f "$HOME/.nstack/.cross-project-default-shown" ]; then
+  log ""
+  log "  Cross-project learning sharing is OFF by default."
+  log "  nstack will ask per-repo on first use, or run:"
+  log "    nstack-config set --local cross_project_learnings true"
+  log "  See docs/migrations/v0.18.0.0.md for details."
+  touch "$HOME/.nstack/.cross-project-default-shown"
+fi
 rm -f /tmp/nstack-latest-version
 
 # 10. Team mode: register/unregister SessionStart hook
