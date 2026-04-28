@@ -594,11 +594,11 @@ and whether the deploy configuration has changed since then:
 
 ```bash
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-if [ ! -f ~/.nstack/projects/$SLUG/land-deploy-confirmed ]; then
+if [ ! -f .nstack/land-deploy-confirmed ]; then
   echo "FIRST_RUN"
 else
   # Check if deploy config has changed since confirmation
-  SAVED_HASH=$(cat ~/.nstack/projects/$SLUG/land-deploy-confirmed 2>/dev/null)
+  SAVED_HASH=$(cat .nstack/land-deploy-confirmed 2>/dev/null)
   CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
   # Also hash workflow files that affect deploy behavior
   WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
@@ -792,10 +792,10 @@ Present the full dry-run results to the user via AskUserQuestion:
 
 Save the deploy config fingerprint so we can detect future changes:
 ```bash
-mkdir -p ~/.nstack/projects/$SLUG
+mkdir -p .nstack
 CURRENT_HASH=$(sed -n '/## Deploy Configuration/,/^## /p' CLAUDE.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
 WORKFLOW_HASH=$(find .github/workflows -maxdepth 1 \( -name '*deploy*' -o -name '*cd*' \) 2>/dev/null | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > ~/.nstack/projects/$SLUG/land-deploy-confirmed
+echo "${CURRENT_HASH}-${WORKFLOW_HASH}" > .nstack/land-deploy-confirmed
 ```
 Continue to Step 2.
 
@@ -1429,7 +1429,7 @@ Log to the review dashboard:
 
 ```bash
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-mkdir -p ~/.nstack/projects/$SLUG
+mkdir -p .nstack
 ```
 
 Write a JSONL entry with timing data:

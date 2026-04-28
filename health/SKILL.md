@@ -603,7 +603,7 @@ _NSTACK_PROJ=""
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
 ```
 
-Append one JSONL line to `~/.nstack/projects/$SLUG/health-history.jsonl`:
+Append one JSONL line to `.nstack/health-history.jsonl`:
 
 ```json
 {"ts":"2026-03-31T14:30:00Z","branch":"main","score":9.1,"typecheck":10,"lint":8,"test":10,"deadcode":7,"shell":10,"duration_s":23}
@@ -622,7 +622,7 @@ If a category was skipped, set its value to `null`.
 
 ## Step 6: Trend Analysis + Recommendations
 
-Read the last 10 entries from `~/.nstack/projects/$SLUG/health-history.jsonl` (if the
+Read the last 10 entries from `.nstack/health-history.jsonl` (if the
 file exists and has prior entries).
 
 ```bash
@@ -630,7 +630,7 @@ _ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _NSTACK_PROJ=""
 [ -n "$_ROOT" ] && _NSTACK_PROJ="$_ROOT/.nstack" && mkdir -p "$_NSTACK_PROJ"
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-tail -10 ~/.nstack/projects/$SLUG/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
+tail -10 .nstack/health-history.jsonl 2>/dev/null || echo "NO_HISTORY"
 ```
 
 **If prior entries exist, show the trend:**

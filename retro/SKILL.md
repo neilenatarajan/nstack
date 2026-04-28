@@ -959,7 +959,7 @@ Check review JSONL logs for plan completion data from /ship runs this period:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-cat ~/.nstack/projects/$SLUG/*-reviews.jsonl 2>/dev/null | grep '"skill":"ship"' | grep '"plan_items_total"' || echo "NO_PLAN_DATA"
+cat .nstack/*-reviews.jsonl 2>/dev/null | grep '"skill":"ship"' | grep '"plan_items_total"' || echo "NO_PLAN_DATA"
 ```
 
 If plan completion data exists within the retro time window:

@@ -664,7 +664,7 @@ Log the result for the review dashboard:
 
 ```bash
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-mkdir -p ~/.nstack/projects/$SLUG
+mkdir -p .nstack
 ```
 
 Write a JSONL entry: `{"skill":"canary","timestamp":"<ISO>","status":"<HEALTHY/DEGRADED/BROKEN>","url":"<url>","duration_min":<N>,"alerts":<N>}`

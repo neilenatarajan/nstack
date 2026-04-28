@@ -1257,7 +1257,7 @@ REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _PLAN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
 _PLAN_SLUG="${_PLAN_SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
-for PLAN_DIR in "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack}" "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
+for PLAN_DIR in "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack/plans}" "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack/designs}" "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack}" "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
   [ -z "$PLAN_DIR" ] && continue
   [ -d "$PLAN_DIR" ] || continue
   PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$BRANCH" 2>/dev/null | head -1)
@@ -2015,13 +2015,13 @@ If Step 8.5 created a docs commit, re-edit the PR/MR body to include the latest 
 Log coverage and plan completion data so `/retro` can track trends:
 
 ```bash
-eval "$($NSTACK_ROOT/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+eval "$($NSTACK_ROOT/bin/nstack-slug 2>/dev/null)" && mkdir -p .nstack
 ```
 
-Append to `~/.nstack/projects/$SLUG/$BRANCH-reviews.jsonl`:
+Append to `.nstack/$BRANCH-reviews.jsonl`:
 
 ```bash
-echo '{"skill":"ship","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"VERSION","branch":"BRANCH"}' >> ~/.nstack/projects/$SLUG/$BRANCH-reviews.jsonl
+echo '{"skill":"ship","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"VERSION","branch":"BRANCH"}' >> .nstack/$BRANCH-reviews.jsonl
 ```
 
 Substitute from earlier steps:

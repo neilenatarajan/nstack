@@ -489,8 +489,8 @@ When evaluating architecture, think "boring by default." When reviewing tests, t
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/nstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t .nstack/designs/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t .nstack/designs/*-design-*.md 2>/dev/null | head -1)
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 If a design doc exists, read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design — check the prior version for context on what changed and why.
@@ -547,9 +547,12 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-br
 _DESIGN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _DESIGN_DIR=""
 [ -n "$_DESIGN_ROOT" ] && _DESIGN_DIR="$_DESIGN_ROOT/.nstack"
-# Search local .nstack/ first, fall back to legacy global path
+# Search local .nstack/designs/ first (v0.18+), then flat .nstack/ (v0.17 transitional),
+# then legacy global ~/.nstack/projects/$SLUG/ (pre-v0.17 fallback).
 DESIGN=""
-[ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)

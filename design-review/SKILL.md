@@ -733,7 +733,7 @@ If `DESIGN_NOT_AVAILABLE`: skip mockup generation — the fix loop works without
 
 ```bash
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-REPORT_DIR=~/.nstack/projects/$SLUG/designs/design-audit-$(date +%Y%m%d)
+REPORT_DIR=.nstack/designs/design-audit-$(date +%Y%m%d)
 mkdir -p "$REPORT_DIR/screenshots"
 echo "REPORT_DIR: $REPORT_DIR"
 ```
@@ -1189,7 +1189,7 @@ Record baseline design score and AI slop score at end of Phase 6.
 ## Output Structure
 
 ```
-~/.nstack/projects/$SLUG/designs/design-audit-{YYYYMMDD}/
+.nstack/designs/design-audit-{YYYYMMDD}/
 ├── design-audit-{domain}.md                  # Structured report
 ├── screenshots/
 │   ├── first-impression.png                  # Phase 1
@@ -1491,7 +1491,7 @@ _NSTACK_PROJ=""
 [ -n "$_ROOT" ] && _NSTACK_PROJ="$_ROOT/.nstack" && mkdir -p "$_NSTACK_PROJ"
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
 ```
-Write a one-line summary to `~/.nstack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md` with a pointer to the full report in `$REPORT_DIR`.
+Write a one-line summary to `.nstack/{user}-{branch}-design-audit-{datetime}.md` with a pointer to the full report in `$REPORT_DIR`.
 
 **Per-finding additions** (beyond standard design audit report):
 - Fix Status: verified / best-effort / reverted / deferred

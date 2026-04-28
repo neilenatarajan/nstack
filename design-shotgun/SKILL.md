@@ -474,7 +474,7 @@ Check for prior design exploration sessions for this project:
 ```bash
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
 setopt +o nomatch 2>/dev/null || true
-_PREV=$(find ~/.nstack/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
+_PREV=$(find .nstack/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -5)
 [ -n "$_PREV" ] && echo "PREVIOUS_SESSIONS_FOUND" || echo "NO_PREVIOUS_SESSIONS"
 echo "$_PREV"
 ```
@@ -526,7 +526,7 @@ ls src/ app/ pages/ components/ 2>/dev/null | head -30
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-ls ~/.nstack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls .nstack/designs/*office-hours* 2>/dev/null | head -5
 ```
 
 If DESIGN.md exists, tell the user: "I'll follow your design system in DESIGN.md by
@@ -559,7 +559,7 @@ Read prior approved designs to bias generation toward the user's demonstrated ta
 
 ```bash
 setopt +o nomatch 2>/dev/null || true
-_TASTE=$(find ~/.nstack/projects/$SLUG/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
+_TASTE=$(find .nstack/designs/ -name "approved.json" -maxdepth 2 2>/dev/null | sort -r | head -10)
 ```
 
 If prior sessions exist, read each `approved.json` and extract patterns from the
@@ -577,7 +577,7 @@ Set up the output directory:
 
 ```bash
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-_DESIGN_DIR=~/.nstack/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)
+_DESIGN_DIR=.nstack/designs/<screen-name>-$(date +%Y%m%d)
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```
@@ -829,7 +829,7 @@ If standalone, offer next steps via AskUserQuestion:
 ## Important Rules
 
 1. **Never save to `.context/`, `docs/designs/`, or `/tmp/`.** All design artifacts go
-   to `~/.nstack/projects/$SLUG/designs/`. This is enforced. See DESIGN_SETUP above.
+   to `.nstack/designs/`. This is enforced. See DESIGN_SETUP above.
 2. **Show variants inline before opening the board.** The user should see designs
    immediately in their terminal. The browser board is for detailed feedback.
 3. **Confirm feedback before saving.** Always summarize what you understood and verify.

@@ -534,9 +534,12 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-br
 _DESIGN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _DESIGN_DIR=""
 [ -n "$_DESIGN_ROOT" ] && _DESIGN_DIR="$_DESIGN_ROOT/.nstack"
-# Search local .nstack/ first, fall back to legacy global path
+# Search local .nstack/designs/ first (v0.18+), then flat .nstack/ (v0.17 transitional),
+# then legacy global ~/.nstack/projects/$SLUG/ (pre-v0.17 fallback).
 DESIGN=""
-[ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
@@ -704,7 +707,7 @@ Then prepend a one-line HTML comment to the plan file:
 ### Step 2: Read context
 
 - Read CLAUDE.md, TODOS.md, git log -30, git diff against the base branch --stat
-- Discover design docs: `ls -t ~/.nstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1`
+- Discover design docs: `ls -t .nstack/designs/*-design-*.md 2>/dev/null | head -1`
 - Detect UI scope: grep the plan for view/rendering terms (component, screen, form,
   button, modal, layout, dashboard, sidebar, nav, dialog). Require 2+ matches. Exclude
   false positives ("page" alone, "UI" in acronyms).
@@ -984,7 +987,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
 
 - Architecture choices: explicit over clever (P5). If codex disagrees with valid reason → TASTE DECISION. Scope changes both models agree on → USER CHALLENGE.
 - Evals: always include all relevant suites (P1)
-- Test plan: generate artifact at `~/.nstack/projects/$SLUG/{user}-{branch}-test-plan-{datetime}.md`
+- Test plan: generate artifact at `.nstack/plans/{user}-{branch}-test-plan-{datetime}.md`
 - TODOS.md: collect all deferred scope expansions from Phase 1, auto-write
 
 **Required execution checklist (Eng):**
@@ -1194,7 +1197,7 @@ produced. Check the plan file and conversation for each item.
 - [ ] Scope challenge with actual code analysis (not just "scope is fine")
 - [ ] Architecture ASCII diagram produced
 - [ ] Test diagram mapping codepaths to test coverage
-- [ ] Test plan artifact written to disk at ~/.nstack/projects/$SLUG/
+- [ ] Test plan artifact written to disk at .nstack/plans/
 - [ ] "NOT in scope" section written
 - [ ] "What already exists" section written
 - [ ] Failure modes registry with critical gap assessment

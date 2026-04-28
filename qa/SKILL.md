@@ -777,7 +777,7 @@ Before falling back to git diff heuristics, check for richer test plan sources:
    ```bash
    setopt +o nomatch 2>/dev/null || true  # zsh compat
    eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-   ls -t ~/.nstack/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   ls -t .nstack/plans/*-test-plan-*.md 2>/dev/null | head -1
    ```
 2. **Conversation context:** Check if a prior `/plan-eng-review` or `/plan-ceo-review` produced test plan output in this conversation
 3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
@@ -1245,7 +1245,7 @@ _NSTACK_PROJ=""
 [ -n "$_ROOT" ] && _NSTACK_PROJ="$_ROOT/.nstack" && mkdir -p "$_NSTACK_PROJ"
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
 ```
-Write to `~/.nstack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
+Write to `.nstack/{user}-{branch}-test-outcome-{datetime}.md`
 
 **Per-issue additions** (beyond standard report template):
 - Fix Status: verified / best-effort / reverted / deferred

@@ -540,7 +540,7 @@ REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _PLAN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
 _PLAN_SLUG="${_PLAN_SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
-for PLAN_DIR in "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack}" "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
+for PLAN_DIR in "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack/plans}" "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack/designs}" "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack}" "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
   [ -z "$PLAN_DIR" ] && continue
   [ -d "$PLAN_DIR" ] || continue
   PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$BRANCH" 2>/dev/null | head -1)

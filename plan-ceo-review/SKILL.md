@@ -562,8 +562,8 @@ Then read CLAUDE.md, TODOS.md, and any existing architecture docs.
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/nstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
-[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+DESIGN=$(ls -t .nstack/designs/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t .nstack/designs/*-design-*.md 2>/dev/null | head -1)
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 ```
 If a design doc exists (from `/office-hours`), read it. Use it as the source of truth for the problem statement, constraints, and chosen approach. If it has a `Supersedes:` field, note that this is a revised design.
@@ -571,7 +571,7 @@ If a design doc exists (from `/office-hours`), read it. Use it as the source of 
 **Handoff note check** (reuses $SLUG and $BRANCH from the design doc check above):
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-HANDOFF=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null | head -1)
+HANDOFF=$(ls -t .nstack/plans/*-$BRANCH-ceo-handoff-*.md 2>/dev/null | head -1)
 [ -n "$HANDOFF" ] && echo "HANDOFF_FOUND: $HANDOFF" || echo "NO_HANDOFF"
 ```
 If this block runs in a separate shell from the design doc check, recompute $SLUG and $BRANCH first using the same commands from that block.
@@ -636,9 +636,12 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-br
 _DESIGN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _DESIGN_DIR=""
 [ -n "$_DESIGN_ROOT" ] && _DESIGN_DIR="$_DESIGN_ROOT/.nstack"
-# Search local .nstack/ first, fall back to legacy global path
+# Search local .nstack/designs/ first (v0.18+), then flat .nstack/ (v0.17 transitional),
+# then legacy global ~/.nstack/projects/$SLUG/ (pre-v0.17 fallback).
 DESIGN=""
-[ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
@@ -837,17 +840,17 @@ Rules:
 After the opt-in/cherry-pick ceremony, write the plan to disk so the vision and decisions survive beyond this conversation. Only run this step for EXPANSION and SELECTIVE EXPANSION modes.
 
 ```bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG/ceo-plans
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p .nstack/plans/ceo
 ```
 
 Before writing, check for existing CEO plans in the ceo-plans/ directory. If any are >30 days old or their branch has been merged/deleted, offer to archive them:
 
 ```bash
-mkdir -p ~/.nstack/projects/$SLUG/ceo-plans/archive
-# For each stale plan: mv ~/.nstack/projects/$SLUG/ceo-plans/{old-plan}.md ~/.nstack/projects/$SLUG/ceo-plans/archive/
+mkdir -p .nstack/plans/ceo/archive
+# For each stale plan: mv .nstack/plans/ceo/{old-plan}.md .nstack/plans/ceo/archive/
 ```
 
-Write to `~/.nstack/projects/$SLUG/ceo-plans/{date}-{feature-slug}.md` using this format:
+Write to `.nstack/plans/ceo/{date}-{feature-slug}.md` using this format:
 
 ```markdown
 ---
@@ -1480,7 +1483,7 @@ the review is complete and the context is no longer needed.
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-rm -f ~/.nstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
+rm -f .nstack/plans/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 ```
 
 ## Review Log
