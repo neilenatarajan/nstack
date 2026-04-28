@@ -1,10 +1,10 @@
 # nstack
 
-nstack turns Claude Code into your remote team. The tool currently has 23 specialists and 8 power tools.
+nstack turns Claude Code into your whole organization. Engineering today, expanding to writing, research, legal, finance, and beyond. Currently: 25+ specialists and 8 power tools, with content/writing as the active expansion frontier ([roadmap](ROADMAP.md)).
 
 I forked nstack from [GStack](https://github.com/garrytan/gstack) for two reasons:
 
-1. GStack does an exceptional job of teaching AI to emulate SWE workflows. I wanted AI to emulate any workflow.
+1. GStack does an exceptional job of teaching AI to emulate SWE workflows. I wanted AI to emulate any workflow — not just engineering.
 2. GStack functions as a content marketing tool for YC. I wanted something purely focused on my workflows.
 
 Along the way, I've added some nice-to-haves like multi-model review Codex + Claude and some better file management. The core sprint methodology is the same. The voice, the features, and the direction are mine.
@@ -50,6 +50,8 @@ Each skill feeds into the next. `/office-hours` writes a design doc that `/plan-
 
 **[Full sprint walkthrough with examples →](docs/SPRINT_GUIDE.md)**
 
+> **Beyond engineering.** The sprint above is the engineering workflow. nstack is expanding to other domains — content/writing is the active pathfinder (`/content-ideation` → `/write-draft` → `/write-review`). See [ROADMAP.md](ROADMAP.md) for what's planned and what's live.
+
 ### All skills
 
 | Skill | Role | What it does |
@@ -83,6 +85,18 @@ Each skill feeds into the next. `/office-hours` writes a design doc that `/plan-
 | `/learn` | Memory | Manage what nstack learned across sessions. Compounds over time. |
 
 **[Deep dives with examples →](docs/skills.md)**
+
+### Content & Writing
+
+The first non-engineering domain. Pipeline: ideation → draft → review.
+
+| Skill | Role | What it does |
+|-------|------|-------------|
+| `/content-ideation` | Content Strategist | Mines your work + voice + audience for 5-10 sharp post ideas with hooks. |
+| `/write-draft` | Writer | Auto-detects format (blog, memo, newsletter, LinkedIn post, etc.). Voice profile aware. |
+| `/write-review` | Editor | Slop detection, voice consistency, structural critique. Diff-based output. |
+| `/research-synthesis` | Research Librarian | End-to-end literature review across 4 academic APIs. Cited evidence synthesis. |
+| `/research-peer-review` | Peer Reviewer | Adversarial OpenReview-format review. Panel mode with Codex synthesis. |
 
 ### Which review do I use?
 
@@ -191,7 +205,8 @@ Available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-desig
 /design-consultation, /design-shotgun, /design-html, /review, /ship, /land-and-deploy,
 /canary, /benchmark, /browse, /open-nstack-browser, /qa, /qa-only, /design-review,
 /setup-browser-cookies, /setup-deploy, /retro, /investigate, /document-release, /codex,
-/cso, /autoplan, /pair-agent, /careful, /freeze, /guard, /unfreeze, /nstack-upgrade, /learn.
+/cso, /autoplan, /pair-agent, /careful, /freeze, /guard, /unfreeze, /nstack-upgrade, /learn,
+/content-ideation, /write-draft, /write-review, /research-synthesis, /research-peer-review.
 ```
 
 ## Uninstall
@@ -222,6 +237,7 @@ Remove the `## nstack` and `## Skill routing` sections from each project's CLAUD
 
 | Doc | What it covers |
 |-----|---------------|
+| [Roadmap](ROADMAP.md) | Domain expansion plan — engineering, content, research, legal, finance, and beyond |
 | [Sprint Guide](docs/SPRINT_GUIDE.md) | Full walkthrough of the 7-phase sprint with examples |
 | [Skill Deep Dives](docs/skills.md) | Philosophy, workflow, and examples for every skill |
 | [Builder Ethos](ETHOS.md) | Boil the Lake, Search Before Building, User Sovereignty |
