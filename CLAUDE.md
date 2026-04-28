@@ -375,6 +375,34 @@ Contributors can store long-range vision docs and design documents in `~/.nstack
 These are local-only (not checked in). When reviewing TODOS.md, check `plans/` for candidates
 that may be ready to promote to TODOs or implement.
 
+## Project data layout (v0.18+)
+
+Per-project data lives in `.nstack/` in the repo root, not in `~/.nstack/projects/$SLUG/`:
+
+```
+.nstack/
+├── config.yaml             # local config (cross_project_learnings, etc.)
+├── learnings.jsonl         # live learnings (always local)
+├── timeline.jsonl          # session timeline
+├── designs/                # design docs from /office-hours, /plan-* skills
+├── plans/                  # test plans, autoplan restore, CEO handoffs
+├── plans/ceo/              # CEO plans
+├── checkpoints/            # /checkpoint outputs
+├── evals/                  # eval results
+└── $BRANCH-reviews.jsonl   # per-branch review log
+```
+
+Global state at `~/.nstack/`: `config.yaml`, `slug-cache/`, `projects.yaml` (registry),
+`learnings.jsonl` (durable archive — opt-in), and meta files.
+
+**Cross-project learning sharing is opt-in (`cross_project_learnings=false` by default).**
+When opted in, learnings dual-write to the global archive at log time. Setting it back to
+`false` automatically removes the repo from the registry. See
+`docs/migrations/v0.18.0.0.md` for full semantics.
+
+**Concurrency safety:** writes to global state go through `scripts/internal/lock.sh`
+(flock helper). All persisted paths are `realpath -e` resolved.
+
 ## E2E eval failure blame protocol
 
 When an E2E eval fails during `/ship` or any other workflow, **never claim "not

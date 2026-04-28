@@ -24,15 +24,21 @@ bin/dev-teardown               # deactivate — back to your global install
 
 nstack automatically learns from failures. At the end of every skill session, the agent
 reflects on what went wrong (CLI errors, wrong approaches, project quirks) and logs
-operational learnings to `~/.nstack/projects/{slug}/learnings.jsonl`. Future sessions
-surface these learnings automatically, so nstack gets smarter on your codebase over time.
+operational learnings to `.nstack/learnings.jsonl` in your repo. Future sessions surface
+these learnings automatically, so nstack gets smarter on your codebase over time.
+
+If you opt in to cross-project sharing (`nstack-config set --local
+cross_project_learnings true`, default `false`), each learning is also dual-written to a
+durable global archive at `~/.nstack/learnings.jsonl` so it survives repo deletion. See
+`docs/migrations/v0.18.0.0.md` for the privacy model.
 
 No setup needed. Learnings are logged automatically. View them with `/learn`.
 
 ### The contributor workflow
 
 1. **Use nstack normally** — operational learnings are captured automatically
-2. **Check your learnings:** `/learn` or `ls ~/.nstack/projects/*/learnings.jsonl`
+2. **Check your learnings:** `/learn` or `cat .nstack/learnings.jsonl` (per-repo) /
+   `cat ~/.nstack/learnings.jsonl` (cross-project archive, if opted in)
 3. **Fork and clone nstack** (if you haven't already)
 4. **Symlink your fork into the project where you hit the bug:**
    ```bash
@@ -438,6 +444,19 @@ Failures are logged but never block the upgrade.
 Migrations are tested as part of `bun test` (tier 1, free). The test suite
 verifies that all migration scripts in `nstack-upgrade/migrations/` are
 executable and parse without syntax errors.
+
+### Rollback honesty
+
+Most nstack migrations are forward-only. Specifically, the v0.18.0.0 migration
+moves project documents from `~/.nstack/projects/$SLUG/` into per-repo
+`.nstack/` directories. The legacy state is backed up to
+`~/.nstack/projects.v0.17-backup/`, but **any learnings, designs, or plans
+logged after migration exist only at the new local paths and are invisible to
+v0.17 binaries.** Downgrading to v0.17 means losing post-migration writes — no
+amount of cleanup makes the asymmetry symmetric.
+
+If you must roll back: restore the backup, downgrade nstack, accept that
+post-migration work is gone. We don't paper over this.
 
 ## Shipping your changes
 
