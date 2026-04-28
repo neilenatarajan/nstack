@@ -128,6 +128,17 @@ case "${1:-}" in
       fi
     fi
     _write_key "$TARGET" "$KEY" "$VALUE"
+
+    # Opt-out cascade: when cross_project_learnings flips to false locally,
+    # auto-remove this repo from the global registry. Privacy boundary should
+    # be enforced by the config change, not require a separate manual step.
+    if [ "$KEY" = "cross_project_learnings" ] && [ "$VALUE" = "false" ] && [ -n "$_ROOT" ]; then
+      SCRIPT_DIR_LOCAL="$(cd "$(dirname "$0")" && pwd)"
+      if [ -x "$SCRIPT_DIR_LOCAL/nstack-registry" ]; then
+        "$SCRIPT_DIR_LOCAL/nstack-registry" remove --local 2>/dev/null && \
+          echo "Removed this project from cross-project registry. Existing global archive entries preserved." >&2 || true
+      fi
+    fi
     ;;
   list)
     # Show merged view: global first, then local overrides
