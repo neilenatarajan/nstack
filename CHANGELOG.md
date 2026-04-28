@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.18.0.0] - 2026-04-28
+
+### Added
+
+- **Cross-project learnings archive (opt-in).** When you set `nstack-config set --local cross_project_learnings true`, every learning logged to `.nstack/learnings.jsonl` is also dual-written to a durable archive at `~/.nstack/learnings.jsonl`. Your learnings now survive repo deletion. Each global entry carries the project slug and repo path so you can trace where a pattern came from.
+- **Project registry.** `~/.nstack/projects.yaml` tracks opted-in projects on this machine, keyed by realpath (so multiple Conductor worktrees of the same repo each get their own entry). Manage with `nstack-registry add | list | status | prune | remove`.
+- **`nstack-registry status`** — quickly check whether the current repo is registered, what its opt-in state is, and when it was last seen.
+- **Setup-time messaging about cross-project sharing.** First-run setup tells you the default is OFF and how to opt in, so you're never surprised by silent behavior.
+- **Size limits on learnings entries** (`insight` ≤ 4096 bytes, `files` ≤ 16 entries) — defense against unbounded inputs that get rendered back to terminals during cross-project summaries.
+- **Concurrency safety** — global writes go through a flock helper so seven Conductor worktrees of the same repo can log learnings simultaneously without torn writes.
+
+### Changed
+
+- **Cross-project learning sharing defaults to OFF (privacy-first).** The previous "unset / ask interactively" behavior is replaced with `cross_project_learnings: false` as the explicit default. Setting it to `false` automatically removes the repo from the registry — opt-out enforced by config change, not a separate cleanup step.
+- **Project documents are now fully local to the repo.** Design docs, test plans, autoplan restore files, CEO plans, and checkpoints all live in `.nstack/{designs,plans,plans/ceo,checkpoints}/` instead of `~/.nstack/projects/$SLUG/`. This corrects a v0.17.0.0 partial-ship: the v0.17 changelog claimed design docs and checkpoints were already local, but the SKILL.md.tmpl files were not regenerated and still wrote to the legacy global path. v0.18 finishes that migration.
+- **Cross-project learnings search reads the global archive directly** at `~/.nstack/learnings.jsonl` instead of globbing `~/.nstack/projects/*/learnings.jsonl`. Single file, self-describing entries.
+- **Malformed JSON lines are now reported.** `nstack-learnings-search` emits a stderr warning when it skips unparseable lines instead of silently dropping them. Concurrent-write torn entries are visible.
+
+### Migration
+
+`/nstack-upgrade` runs the v0.18.0.0 migration automatically:
+
+- Backs up `~/.nstack/projects/` to `~/.nstack/projects.v0.17-backup/`.
+- Scans the slug-cache to map each legacy `~/.nstack/projects/$SLUG/` directory back to its repo path. Multi-worktree case picks the most-recently-touched path as canonical.
+- Moves designs, plans, ceo-plans, checkpoints, evals, reviews into the target repo's `.nstack/` subdirs.
+- Seeds learnings into `~/.nstack/learnings.jsonl` (one-time bulk seed; ongoing writes use the dual-write hook).
+- Sets `cross_project_learnings=false` globally if unset (privacy default for migrating users).
+
+Migration is idempotent, non-fatal, concurrent-safe, and preserves your legacy data in the backup directory. Forward-only: downgrading to v0.17 will not see post-v0.18 writes — see `docs/migrations/v0.18.0.0.md` for full semantics.
+
+### For contributors
+
+- New `bin/nstack-registry` CLI (zero-arg `add`, `list`, `status`, `prune`, `remove --local|--path|--global`).
+- New `scripts/internal/lock.sh` — flock(2) helper used by registry + global learnings writes + migration. Internal-only; not in `bin/`.
+- `scripts/resolvers/review.ts` and 17 `SKILL.md.tmpl` files updated to read/write local `.nstack/` paths.
+- `bin/nstack-config` now triggers `nstack-registry remove --local` automatically when `cross_project_learnings` flips to `false` locally.
+- Test fixtures (`test/fixtures/golden/*-ship-SKILL.md`) regenerated for the new plan-discovery path.
+- New tests: `test/registry.test.ts` (8 tests), `test/learnings-dualwrite.test.ts` (7 tests).
+- New doc: `docs/migrations/v0.18.0.0.md` covers what changed, registry semantics, edge cases, rollback honesty.
+
 ## [0.17.0.0] - 2026-04-16
 
 ### Added
