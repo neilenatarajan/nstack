@@ -2,15 +2,13 @@
 # nstack-learnings-search — read and filter project learnings
 # Usage: nstack-learnings-search [--type TYPE] [--query KEYWORD] [--limit N] [--cross-project]
 #
-# Reads ~/.nstack/projects/$SLUG/learnings.jsonl, applies confidence decay,
+# Reads .nstack/learnings.jsonl (in repo root), applies confidence decay,
 # resolves duplicates (latest winner per key+type), and outputs formatted text.
 # Exit 0 silently if no learnings file exists.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/nstack-project-dir"
 eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
 
 TYPE=""
 QUERY=""
@@ -27,26 +25,36 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-LEARNINGS_FILE="$NSTACK_HOME/projects/$SLUG/learnings.jsonl"
+LEARNINGS_FILE=""
+[ -n "$_NSTACK_PROJ" ] && LEARNINGS_FILE="$_NSTACK_PROJ/learnings.jsonl"
 
-# Collect all JSONL files to search
+# Collect all JSONL files to search.
+# - default: local .nstack/learnings.jsonl only
+# - --cross-project: read the durable global archive ~/.nstack/learnings.jsonl
+#   directly (single file, self-describing entries with project + repo_path).
 FILES=()
-[ -f "$LEARNINGS_FILE" ] && FILES+=("$LEARNINGS_FILE")
+[ -n "$LEARNINGS_FILE" ] && [ -f "$LEARNINGS_FILE" ] && FILES+=("$LEARNINGS_FILE")
 
 if [ "$CROSS_PROJECT" = true ]; then
-  # Add other projects' learnings (max 5, sorted by mtime)
-  for f in $(find "$NSTACK_HOME/projects" -name "learnings.jsonl" -not -path "*/$SLUG/*" 2>/dev/null | head -5); do
-    FILES+=("$f")
-  done
+  NSTACK_GLOBAL="${NSTACK_STATE_DIR:-$HOME/.nstack}"
+  GLOBAL_ARCHIVE="$NSTACK_GLOBAL/learnings.jsonl"
+  if [ -f "$GLOBAL_ARCHIVE" ] && [ "$GLOBAL_ARCHIVE" != "$LEARNINGS_FILE" ]; then
+    FILES+=("$GLOBAL_ARCHIVE")
+  fi
 fi
 
 if [ ${#FILES[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Process all files through bun for JSON parsing, decay, dedup, filtering
+# Process all files through bun for JSON parsing, decay, dedup, filtering.
+# Resolve bun (subprocess shells may not have it on PATH).
+BUN_BIN="$(command -v bun 2>/dev/null || true)"
+[ -z "$BUN_BIN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN_BIN="$HOME/.bun/bin/bun"
+[ -z "$BUN_BIN" ] && exit 0  # No bun → silent skip; learnings are non-essential
+
 NSTACK_SEARCH_TYPE="$TYPE" NSTACK_SEARCH_QUERY="$QUERY" NSTACK_SEARCH_LIMIT="$LIMIT" NSTACK_SEARCH_SLUG="$SLUG" NSTACK_SEARCH_CROSS="$CROSS_PROJECT" \
-cat "${FILES[@]}" 2>/dev/null | NSTACK_SEARCH_TYPE="$TYPE" NSTACK_SEARCH_QUERY="$QUERY" NSTACK_SEARCH_LIMIT="$LIMIT" NSTACK_SEARCH_SLUG="$SLUG" NSTACK_SEARCH_CROSS="$CROSS_PROJECT" bun -e "
+cat "${FILES[@]}" 2>/dev/null | NSTACK_SEARCH_TYPE="$TYPE" NSTACK_SEARCH_QUERY="$QUERY" NSTACK_SEARCH_LIMIT="$LIMIT" NSTACK_SEARCH_SLUG="$SLUG" NSTACK_SEARCH_CROSS="$CROSS_PROJECT" "$BUN_BIN" -e "
 const lines = (await Bun.stdin.text()).trim().split('\n').filter(Boolean);
 const now = Date.now();
 const type = process.env.NSTACK_SEARCH_TYPE || '';
@@ -55,6 +63,7 @@ const limit = parseInt(process.env.NSTACK_SEARCH_LIMIT || '10', 10);
 const slug = process.env.NSTACK_SEARCH_SLUG || '';
 
 const entries = [];
+let malformed = 0;
 for (const line of lines) {
   try {
     const e = JSON.parse(line);
@@ -68,18 +77,39 @@ for (const line of lines) {
     }
     e._effectiveConfidence = conf;
 
-    // Determine if this is from the current project or cross-project
-    // Cross-project entries are tagged for display
-    e._crossProject = !line.includes(slug) && process.env.NSTACK_SEARCH_CROSS === 'true';
+    // Cross-project tagging: prefer explicit project field (v0.18+ entries),
+    // fall back to substring slug check for legacy entries.
+    if (process.env.NSTACK_SEARCH_CROSS === 'true') {
+      if (e.project) {
+        e._crossProject = e.project !== slug;
+      } else {
+        e._crossProject = !line.includes(slug);
+      }
+    } else {
+      e._crossProject = false;
+    }
 
     entries.push(e);
-  } catch {}
+  } catch {
+    malformed++;
+  }
+}
+if (malformed > 0) {
+  console.error('nstack-learnings-search: skipped ' + malformed + ' malformed line(s) — concurrent-write torn entries possible');
 }
 
-// Dedup: latest winner per key+type
+// Dedup: latest winner per (key, type, project, repo_path).
+// Including project + repo_path means: same key from different worktrees stays
+// distinct (preserves cross-worktree contradictions); same key from the same
+// worktree is collapsed to the latest entry. Legacy entries with no project
+// field fall back to legacy (key, type) dedup.
 const seen = new Map();
 for (const e of entries) {
-  const dk = e.key + '|' + e.type;
+  const proj = e.project || '';
+  const repo = e.repo_path || '';
+  const dk = proj
+    ? e.key + '|' + e.type + '|' + proj + '|' + repo
+    : e.key + '|' + e.type;
   const existing = seen.get(dk);
   if (!existing || new Date(e.ts) > new Date(existing.ts)) {
     seen.set(dk, e);
@@ -131,4 +161,4 @@ for (const [t, arr] of Object.entries(byType)) {
   }
   console.log('');
 }
-" 2>/dev/null || exit 0
+" || exit 0

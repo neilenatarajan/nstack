@@ -1,32 +1,129 @@
 #!/usr/bin/env bash
-# nstack-learnings-log — append a learning to the project learnings file
+# nstack-learnings-log — append a learning to the project learnings file.
+#
 # Usage: nstack-learnings-log '{"skill":"review","type":"pitfall","key":"n-plus-one","insight":"...","confidence":8,"source":"observed"}'
+#
+# Always writes to .nstack/learnings.jsonl (the local working state).
+# Also writes to ~/.nstack/learnings.jsonl (durable archive across repo deletion)
+# when:
+#   - cross_project_learnings=true in local config (opt-in, default false)
+#   - $HOME/.nstack/ is writable
+# Otherwise the global write is silently skipped (project-scoped agents) with a
+# stderr warning if the global path exists but isn't writable.
 #
 # Append-only storage. Duplicates (same key+type) are resolved at read time
 # by nstack-learnings-search ("latest winner" per key+type).
+#
+# Size limits enforced (defense against output-injection blast):
+#   - insight ≤ 4096 bytes
+#   - files array ≤ 16 entries
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
-mkdir -p "$NSTACK_HOME/projects/$SLUG"
+REPO_TOOLS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCK_HELPER="$REPO_TOOLS_ROOT/scripts/internal/lock.sh"
+
+source "$SCRIPT_DIR/nstack-project-dir"
+if [ -z "$_NSTACK_PROJ" ]; then
+  echo "nstack-learnings-log: not in a git repository" >&2
+  exit 1
+fi
+mkdir -p "$_NSTACK_PROJ"
+
+if [ -f "$LOCK_HELPER" ]; then
+  # shellcheck disable=SC1090
+  source "$LOCK_HELPER"
+else
+  nstack_with_lock() { local _lf="$1" _to="$2"; shift 2; "$@"; }
+fi
 
 INPUT="$1"
 
-# Validate: input must be parseable JSON
-if ! printf '%s' "$INPUT" | bun -e "JSON.parse(await Bun.stdin.text())" 2>/dev/null; then
-  echo "nstack-learnings-log: invalid JSON, skipping" >&2
-  exit 1
-fi
+# Resolve bun (subprocess shells may not have it on PATH)
+BUN_BIN="$(command -v bun 2>/dev/null || true)"
+[ -z "$BUN_BIN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN_BIN="$HOME/.bun/bin/bun"
 
-# Inject timestamp if not present
-if ! printf '%s' "$INPUT" | bun -e "const j=JSON.parse(await Bun.stdin.text()); if(!j.ts) process.exit(1)" 2>/dev/null; then
-  INPUT=$(printf '%s' "$INPUT" | bun -e "
+if [ -z "$BUN_BIN" ]; then
+  # No bun available — best-effort syntactic check.
+  case "$INPUT" in
+    \{*\}) ;;
+    *) echo "nstack-learnings-log: input must be a JSON object (no bun for full validation)" >&2; exit 1 ;;
+  esac
+  case "$INPUT" in
+    *'"ts"'*) ;;
+    *)
+      ts_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      INPUT=$(printf '%s' "$INPUT" | sed "s|}\$|,\"ts\":\"$ts_now\"}|")
+      ;;
+  esac
+else
+  # Validate: input must be parseable JSON
+  if ! printf '%s' "$INPUT" | "$BUN_BIN" -e "JSON.parse(await Bun.stdin.text())" 2>/dev/null; then
+    echo "nstack-learnings-log: invalid JSON, skipping" >&2
+    exit 1
+  fi
+
+  # Inject timestamp if not present
+  if ! printf '%s' "$INPUT" | "$BUN_BIN" -e "const j=JSON.parse(await Bun.stdin.text()); if(!j.ts) process.exit(1)" 2>/dev/null; then
+    INPUT=$(printf '%s' "$INPUT" | "$BUN_BIN" -e "
+      const j = JSON.parse(await Bun.stdin.text());
+      j.ts = new Date().toISOString();
+      console.log(JSON.stringify(j));
+    " 2>/dev/null) || true
+  fi
+
+  # Enforce size limits (reject early; better than silent corruption later)
+  CHECKED=$(printf '%s' "$INPUT" | "$BUN_BIN" -e "
     const j = JSON.parse(await Bun.stdin.text());
-    j.ts = new Date().toISOString();
+    if (typeof j.insight === 'string' && j.insight.length > 4096) {
+      console.error('nstack-learnings-log: insight exceeds 4096 bytes, rejecting');
+      process.exit(1);
+    }
+    if (Array.isArray(j.files) && j.files.length > 16) {
+      console.error('nstack-learnings-log: files array exceeds 16 entries, rejecting');
+      process.exit(1);
+    }
     console.log(JSON.stringify(j));
-  " 2>/dev/null) || true
+  ") || { echo "nstack-learnings-log: size validation failed" >&2; exit 1; }
+  INPUT="$CHECKED"
 fi
 
-echo "$INPUT" >> "$NSTACK_HOME/projects/$SLUG/learnings.jsonl"
+# Always: write to local (lock-protected against concurrent worktree writes).
+# `printf '%s\n'` instead of `echo` so JSON content with backslash escapes is preserved
+# verbatim (some shells interpret echo backslash sequences).
+LOCAL_FILE="$_NSTACK_PROJ/learnings.jsonl"
+LOCAL_LOCK="$_NSTACK_PROJ/.learnings.lock"
+nstack_with_lock "$LOCAL_LOCK" 5 bash -c 'printf "%s\n" "$1" >> "$2"' _ "$INPUT" "$LOCAL_FILE" || {
+  echo "nstack-learnings-log: local write failed (lock timeout)" >&2
+  exit 1
+}
+
+# Conditionally: dual-write to the durable global archive.
+OPTIN=$("$SCRIPT_DIR/nstack-config" get cross_project_learnings 2>/dev/null || echo "")
+if [ "$OPTIN" = "true" ]; then
+  GLOBAL_DIR="${NSTACK_STATE_DIR:-$HOME/.nstack}"
+  GLOBAL_FILE="$GLOBAL_DIR/learnings.jsonl"
+  GLOBAL_LOCK="$GLOBAL_DIR/.learnings.lock"
+  if mkdir -p "$GLOBAL_DIR" 2>/dev/null && [ -w "$GLOBAL_DIR" ]; then
+    if [ -n "$BUN_BIN" ]; then
+      eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
+      REPO_REAL=""
+      if command -v realpath >/dev/null 2>&1; then
+        REPO_REAL=$(realpath "$_NSTACK_PROJ/.." 2>/dev/null || true)
+      fi
+      [ -z "$REPO_REAL" ] && REPO_REAL=$(cd "$_NSTACK_PROJ/.." && pwd -P)
+      ENRICHED_INPUT=$(printf '%s' "$INPUT" | NSTACK_SLUG="${SLUG:-}" NSTACK_REPO_PATH="$REPO_REAL" "$BUN_BIN" -e "
+        const j = JSON.parse(await Bun.stdin.text());
+        j.project = process.env.NSTACK_SLUG || j.project || '';
+        j.repo_path = process.env.NSTACK_REPO_PATH || j.repo_path || '';
+        console.log(JSON.stringify(j));
+      " 2>/dev/null) || ENRICHED_INPUT="$INPUT"
+    else
+      ENRICHED_INPUT="$INPUT"
+    fi
+    nstack_with_lock "$GLOBAL_LOCK" 5 bash -c 'printf "%s\n" "$1" >> "$2"' _ "$ENRICHED_INPUT" "$GLOBAL_FILE" || {
+      echo "nstack-learnings-log: global archive write failed (lock timeout); saved locally only" >&2
+    }
+  else
+    echo "nstack-learnings-log: \$HOME/.nstack not writable; saved locally only" >&2
+  fi
+fi

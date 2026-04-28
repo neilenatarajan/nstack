@@ -36,7 +36,6 @@ log() { [ "$QUIET" -eq 0 ] && echo "$@" || true; }
 HOST="claude"
 LOCAL_INSTALL=0
 SKILL_PREFIX=1
-SKILL_PREFIX_FLAG=0
 TEAM_MODE=0
 NO_TEAM_MODE=0
 while [ $# -gt 0 ]; do
@@ -44,8 +43,8 @@ while [ $# -gt 0 ]; do
     --host) [ -z "$2" ] && echo "Missing value for --host (expected claude, codex, kiro, or auto)" >&2 && exit 1; HOST="$2"; shift 2 ;;
     --host=*) HOST="${1#--host=}"; shift ;;
     --local) LOCAL_INSTALL=1; shift ;;
-    --prefix)    SKILL_PREFIX=1; SKILL_PREFIX_FLAG=1; shift ;;
-    --no-prefix) SKILL_PREFIX=0; SKILL_PREFIX_FLAG=1; shift ;;
+    --prefix)    shift ;;  # Accepted for backwards compat, always prefixed
+    --no-prefix) echo "Warning: --no-prefix is deprecated. Skills are always prefixed with nstack-." >&2; shift ;;
     --team)    TEAM_MODE=1; shift ;;
     --no-team) NO_TEAM_MODE=1; shift ;;
     -q|--quiet) QUIET=1; shift ;;
@@ -70,46 +69,8 @@ case "$HOST" in
   *) echo "Unknown --host value: $HOST (expected claude, codex, kiro, factory, openclaw, or auto)" >&2; exit 1 ;;
 esac
 
-# ─── Resolve skill prefix preference ─────────────────────────
-# Priority: CLI flag > saved config > interactive prompt (or flat default for non-TTY)
+# Skills are always prefixed with nstack-
 NSTACK_CONFIG="$SOURCE_NSTACK_DIR/bin/nstack-config"
-export NSTACK_SETUP_RUNNING=1  # Prevent nstack-config post-set hook from triggering relink mid-setup
-if [ "$SKILL_PREFIX_FLAG" -eq 0 ]; then
-  _saved_prefix="$("$NSTACK_CONFIG" get skill_prefix 2>/dev/null || true)"
-  if [ "$_saved_prefix" = "true" ]; then
-    SKILL_PREFIX=1
-  elif [ "$_saved_prefix" = "false" ]; then
-    SKILL_PREFIX=0
-  else
-    # No saved preference — prompt interactively (or default flat for non-TTY/quiet)
-    if [ "$QUIET" -eq 1 ]; then
-      SKILL_PREFIX=0
-    elif [ -t 0 ]; then
-      echo ""
-      echo "Skill naming: how should nstack skills appear?"
-      echo ""
-      echo "  1) Short names: /qa, /ship, /review"
-      echo "     Recommended. Clean and fast to type."
-      echo ""
-      echo "  2) Namespaced: /nstack-qa, /nstack-ship, /nstack-review"
-      echo "     Use this if you run other skill packs alongside nstack to avoid conflicts."
-      echo ""
-      printf "Choice [1/2] (default: 1, auto-selects in 10s): "
-      read -t 10 -r _prefix_choice </dev/tty 2>/dev/null || _prefix_choice=""
-      case "$_prefix_choice" in
-        2) SKILL_PREFIX=1 ;;
-        *) SKILL_PREFIX=0 ;;
-      esac
-    else
-      SKILL_PREFIX=0
-    fi
-    # Save the choice for future runs
-    "$NSTACK_CONFIG" set skill_prefix "$([ "$SKILL_PREFIX" -eq 1 ] && echo true || echo false)" 2>/dev/null || true
-  fi
-else
-  # Flag was passed explicitly — persist the choice
-  "$NSTACK_CONFIG" set skill_prefix "$([ "$SKILL_PREFIX" -eq 1 ] && echo true || echo false)" 2>/dev/null || true
-fi
 
 # --local: install to .claude/skills/ in the current working directory (deprecated)
 if [ "$LOCAL_INSTALL" -eq 1 ]; then
@@ -293,10 +254,8 @@ git config merge.ours.driver true 2>/dev/null || true
 
 # ─── Helper: link Claude skill subdirectories into a skills parent directory ──
 # Creates real directories (not symlinks) at the top level with a SKILL.md symlink
-# inside. This ensures Claude discovers them as top-level skills, not nested under
-# nstack/ (which would auto-prefix them as nstack-*).
-# When SKILL_PREFIX=1, directories are prefixed with "nstack-".
-# Use --no-prefix to restore flat names.
+# inside, prefixed with "nstack-". This ensures Claude discovers them as top-level
+# skills, not nested under nstack/.
 link_claude_skill_dirs() {
   local nstack_dir="$1"
   local skills_dir="$2"
@@ -309,15 +268,11 @@ link_claude_skill_dirs() {
       # Use frontmatter name: if present (e.g., run-tests/ with name: test → symlink as "test")
       skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
       [ -z "$skill_name" ] && skill_name="$dir_name"
-      # Apply nstack- prefix unless --no-prefix or already prefixed
-      if [ "$SKILL_PREFIX" -eq 1 ]; then
-        case "$skill_name" in
-          nstack-*) link_name="$skill_name" ;;
-          *)        link_name="nstack-$skill_name" ;;
-        esac
-      else
-        link_name="$skill_name"
-      fi
+      # Always prefix — don't double-prefix directories already named nstack-*
+      case "$skill_name" in
+        nstack-*) link_name="$skill_name" ;;
+        *)        link_name="nstack-$skill_name" ;;
+      esac
       target="$skills_dir/$link_name"
       # Upgrade old directory symlinks to real directories
       if [ -L "$target" ]; then
@@ -374,47 +329,6 @@ cleanup_old_claude_symlinks() {
   done
   if [ ${#removed[@]} -gt 0 ]; then
     echo "  cleaned up old entries: ${removed[*]}"
-  fi
-}
-
-# ─── Helper: remove old prefixed Claude skill entries ─────────────────────────
-# Reverse migration: when switching from nstack- prefixed names to flat names,
-# clean up stale nstack-* symlinks or directories that point into the nstack directory.
-cleanup_prefixed_claude_symlinks() {
-  local nstack_dir="$1"
-  local skills_dir="$2"
-  local removed=()
-  for skill_dir in "$nstack_dir"/*/; do
-    if [ -f "$skill_dir/SKILL.md" ]; then
-      skill_name="$(basename "$skill_dir")"
-      [ "$skill_name" = "node_modules" ] && continue
-      # Only clean up prefixed entries for dirs that AREN'T already prefixed
-      # (e.g., remove nstack-qa but NOT nstack-upgrade which is the real dir name)
-      case "$skill_name" in nstack-*) continue ;; esac
-      prefixed_target="$skills_dir/nstack-$skill_name"
-      # Remove directory symlinks pointing into nstack/
-      if [ -L "$prefixed_target" ]; then
-        link_dest="$(readlink "$prefixed_target" 2>/dev/null || true)"
-        case "$link_dest" in
-          nstack/*|*/nstack/*)
-            rm -f "$prefixed_target"
-            removed+=("nstack-$skill_name")
-            ;;
-        esac
-      # Remove real directories with symlinked SKILL.md pointing into nstack/
-      elif [ -d "$prefixed_target" ] && [ -L "$prefixed_target/SKILL.md" ]; then
-        link_dest="$(readlink "$prefixed_target/SKILL.md" 2>/dev/null || true)"
-        case "$link_dest" in
-          *nstack*)
-            rm -rf "$prefixed_target"
-            removed+=("nstack-$skill_name")
-            ;;
-        esac
-      fi
-    fi
-  done
-  if [ ${#removed[@]} -gt 0 ]; then
-    echo "  cleaned up prefixed entries: ${removed[*]}"
   fi
 }
 
@@ -615,28 +529,21 @@ fi
 
 if [ "$INSTALL_CLAUDE" -eq 1 ]; then
   if [ "$SKILLS_BASENAME" = "skills" ]; then
-    # Clean up stale symlinks from the opposite prefix mode
-    if [ "$SKILL_PREFIX" -eq 1 ]; then
-      cleanup_old_claude_symlinks "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
-    else
-      cleanup_prefixed_claude_symlinks "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
-    fi
+    # Clean up stale unprefixed symlinks from previous installs
+    cleanup_old_claude_symlinks "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
     # Patch name: fields BEFORE creating symlinks so link_claude_skill_dirs
     # reads the correct (patched) name: values for symlink naming
-    "$SOURCE_NSTACK_DIR/bin/nstack-patch-names" "$SOURCE_NSTACK_DIR" "$SKILL_PREFIX"
+    "$SOURCE_NSTACK_DIR/bin/nstack-patch-names" "$SOURCE_NSTACK_DIR"
     link_claude_skill_dirs "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
     # Self-healing: re-run nstack-relink to ensure name: fields and directory
-    # names are consistent with the config. This catches cases where an interrupted
+    # names are consistent. This catches cases where an interrupted
     # setup, stale git state, or gen:skill-docs left name: fields out of sync.
     NSTACK_RELINK="$SOURCE_NSTACK_DIR/bin/nstack-relink"
     if [ -x "$NSTACK_RELINK" ]; then
       NSTACK_SKILLS_DIR="$INSTALL_SKILLS_DIR" NSTACK_INSTALL_DIR="$SOURCE_NSTACK_DIR" "$NSTACK_RELINK" >/dev/null 2>&1 || true
     fi
     # Backwards-compat alias: /connect-chrome → /open-nstack-browser
-    _OGB_LINK="$INSTALL_SKILLS_DIR/connect-chrome"
-    if [ "$SKILL_PREFIX" -eq 1 ]; then
-      _OGB_LINK="$INSTALL_SKILLS_DIR/nstack-connect-chrome"
-    fi
+    _OGB_LINK="$INSTALL_SKILLS_DIR/nstack-connect-chrome"
     if [ -L "$_OGB_LINK" ] || [ ! -e "$_OGB_LINK" ]; then
       ln -snf "nstack/open-nstack-browser" "$_OGB_LINK"
     fi
@@ -656,22 +563,15 @@ if [ "$INSTALL_CLAUDE" -eq 1 ]; then
     log "  symlinked $CLAUDE_NSTACK_LINK -> $SOURCE_NSTACK_DIR"
     INSTALL_SKILLS_DIR="$CLAUDE_SKILLS_DIR"
     INSTALL_NSTACK_DIR="$CLAUDE_NSTACK_LINK"
-    # Clean up stale symlinks from the opposite prefix mode
-    if [ "$SKILL_PREFIX" -eq 1 ]; then
-      cleanup_old_claude_symlinks "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
-    else
-      cleanup_prefixed_claude_symlinks "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
-    fi
-    "$SOURCE_NSTACK_DIR/bin/nstack-patch-names" "$SOURCE_NSTACK_DIR" "$SKILL_PREFIX"
+    # Clean up stale unprefixed symlinks from previous installs
+    cleanup_old_claude_symlinks "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
+    "$SOURCE_NSTACK_DIR/bin/nstack-patch-names" "$SOURCE_NSTACK_DIR"
     link_claude_skill_dirs "$SOURCE_NSTACK_DIR" "$INSTALL_SKILLS_DIR"
     NSTACK_RELINK="$SOURCE_NSTACK_DIR/bin/nstack-relink"
     if [ -x "$NSTACK_RELINK" ]; then
       NSTACK_SKILLS_DIR="$INSTALL_SKILLS_DIR" NSTACK_INSTALL_DIR="$SOURCE_NSTACK_DIR" "$NSTACK_RELINK" >/dev/null 2>&1 || true
     fi
-    _OGB_LINK="$INSTALL_SKILLS_DIR/connect-chrome"
-    if [ "$SKILL_PREFIX" -eq 1 ]; then
-      _OGB_LINK="$INSTALL_SKILLS_DIR/nstack-connect-chrome"
-    fi
+    _OGB_LINK="$INSTALL_SKILLS_DIR/nstack-connect-chrome"
     if [ -L "$_OGB_LINK" ] || [ ! -e "$_OGB_LINK" ]; then
       ln -snf "nstack/open-nstack-browser" "$_OGB_LINK"
     fi
@@ -805,6 +705,18 @@ fi
 if [ ! -f "$HOME/.nstack/.welcome-seen" ]; then
   log "  Welcome! Run /nstack-upgrade anytime to stay current."
   touch "$HOME/.nstack/.welcome-seen"
+fi
+# Cross-project sharing: tell user the default + how to change it.
+# v0.18+: cross_project_learnings is OFF by default (privacy-first). Per-repo
+# prompts fire on first use. This setup-time message avoids "where did the
+# prompt go?" confusion.
+if [ ! -f "$HOME/.nstack/.cross-project-default-shown" ]; then
+  log ""
+  log "  Cross-project learning sharing is OFF by default."
+  log "  nstack will ask per-repo on first use, or run:"
+  log "    nstack-config set --local cross_project_learnings true"
+  log "  See docs/migrations/v0.18.0.0.md for details."
+  touch "$HOME/.nstack/.cross-project-default-shown"
 fi
 rm -f /tmp/nstack-latest-version
 

@@ -643,15 +643,3 @@ if (failures.length > 0 && HOST_ARG_VAL === 'all') {
 }
 // Single host dry-run failure already handled above
 
-// After all hosts processed, warn if prefix patches may need re-applying
-if (!DRY_RUN) {
-  try {
-    const configPath = path.join(process.env.HOME || '', '.nstack', 'config.yaml');
-    if (fs.existsSync(configPath)) {
-      const config = fs.readFileSync(configPath, 'utf-8');
-      if (/^skill_prefix:\s*true/m.test(config)) {
-        console.log('\nNote: skill_prefix is true. Run nstack-relink to re-apply name: patches.');
-      }
-    }
-  } catch { /* non-fatal */ }
-}

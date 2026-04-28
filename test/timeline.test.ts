@@ -44,8 +44,8 @@ function runRead(args: string = ''): string {
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nstack-timeline-'));
-  slugDir = path.join(tmpDir, 'projects');
-  fs.mkdirSync(slugDir, { recursive: true });
+  // NSTACK_HOME is now used directly as the project data dir (no projects/$SLUG nesting)
+  slugDir = tmpDir;
 });
 
 afterEach(() => {
@@ -53,9 +53,7 @@ afterEach(() => {
 });
 
 function findTimelineFile(): string | null {
-  const projectDirs = fs.readdirSync(slugDir);
-  if (projectDirs.length === 0) return null;
-  const f = path.join(slugDir, projectDirs[0], 'timeline.jsonl');
+  const f = path.join(slugDir, 'timeline.jsonl');
   return fs.existsSync(f) ? f : null;
 }
 

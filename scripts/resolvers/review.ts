@@ -248,7 +248,17 @@ After /${first} completes, re-run the design doc check:
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 SLUG=$(~/.claude/skills/nstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
-DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+_DESIGN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_DESIGN_DIR=""
+[ -n "$_DESIGN_ROOT" ] && _DESIGN_DIR="$_DESIGN_ROOT/.nstack"
+# Search local .nstack/designs/ first (v0.18+), then flat .nstack/ (v0.17 transitional),
+# then legacy global ~/.nstack/projects/\$SLUG/ (pre-v0.17 fallback).
+DESIGN=""
+[ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/designs/*-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && [ -n "$_DESIGN_DIR" ] && DESIGN=$(ls -t "$_DESIGN_DIR"/*-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 [ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.nstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
 [ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
 \`\`\`
@@ -695,11 +705,12 @@ function generatePlanFileDiscovery(): string {
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
-# Compute project slug for ~/.nstack/projects/ lookup
+# Search plan file locations (local .nstack/ first, then legacy global, then personal)
+_PLAN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\\([^/]*/[^/]*\\)\\.git$|\\1|;s|.*[:/]\\([^/]*/[^/]*\\)$|\\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
 _PLAN_SLUG="\${_PLAN_SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
-# Search common plan file locations (project designs first, then personal/local)
-for PLAN_DIR in "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
+for PLAN_DIR in "\${_PLAN_ROOT:+$_PLAN_ROOT/.nstack/plans}" "\${_PLAN_ROOT:+$_PLAN_ROOT/.nstack/designs}" "\${_PLAN_ROOT:+$_PLAN_ROOT/.nstack}" "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
+  [ -z "$PLAN_DIR" ] && continue
   [ -d "$PLAN_DIR" ] || continue
   PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$BRANCH" 2>/dev/null | head -1)
   [ -z "$PLAN" ] && PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$REPO" 2>/dev/null | head -1)

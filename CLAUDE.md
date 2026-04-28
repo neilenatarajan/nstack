@@ -230,13 +230,11 @@ symlink or a real copy. If it's a symlink to your working directory, be aware th
 - During large refactors, remove the symlink (`rm .claude/skills/nstack`) so the
   global install at `~/.claude/skills/nstack/` is used instead
 
-**Prefix setting:** Setup creates real directories (not symlinks) at the top level
-with a SKILL.md symlink inside (e.g., `qa/SKILL.md -> nstack/qa/SKILL.md`). This
-ensures Claude discovers them as top-level skills, not nested under `nstack/`.
-Names are either short (`qa`) or namespaced (`nstack-qa`), controlled by
-`skill_prefix` in `~/.nstack/config.yaml`. When vendoring into a project, run
-`./setup` after symlinking to create the per-skill directories. Pass `--no-prefix`
-or `--prefix` to skip the interactive prompt.
+**Skill directories:** Setup creates real directories (not symlinks) at the top level
+with a SKILL.md symlink inside (e.g., `nstack-qa/SKILL.md -> nstack/qa/SKILL.md`).
+All skills are permanently prefixed with `nstack-` (e.g., `/nstack-qa`, `/nstack-ship`).
+When vendoring into a project, run `./setup` after symlinking to create the per-skill
+directories.
 
 **For plan reviews:** When reviewing plans that modify skill templates or the
 gen-skill-docs pipeline, consider whether the changes should be tested in isolation
@@ -376,6 +374,34 @@ builder philosophy.
 Contributors can store long-range vision docs and design documents in `~/.nstack-dev/plans/`.
 These are local-only (not checked in). When reviewing TODOS.md, check `plans/` for candidates
 that may be ready to promote to TODOs or implement.
+
+## Project data layout (v0.18+)
+
+Per-project data lives in `.nstack/` in the repo root, not in `~/.nstack/projects/$SLUG/`:
+
+```
+.nstack/
+├── config.yaml             # local config (cross_project_learnings, etc.)
+├── learnings.jsonl         # live learnings (always local)
+├── timeline.jsonl          # session timeline
+├── designs/                # design docs from /office-hours, /plan-* skills
+├── plans/                  # test plans, autoplan restore, CEO handoffs
+├── plans/ceo/              # CEO plans
+├── checkpoints/            # /checkpoint outputs
+├── evals/                  # eval results
+└── $BRANCH-reviews.jsonl   # per-branch review log
+```
+
+Global state at `~/.nstack/`: `config.yaml`, `slug-cache/`, `projects.yaml` (registry),
+`learnings.jsonl` (durable archive — opt-in), and meta files.
+
+**Cross-project learning sharing is opt-in (`cross_project_learnings=false` by default).**
+When opted in, learnings dual-write to the global archive at log time. Setting it back to
+`false` automatically removes the repo from the registry. See
+`docs/migrations/v0.18.0.0.md` for full semantics.
+
+**Concurrency safety:** writes to global state go through `scripts/internal/lock.sh`
+(flock helper). All persisted paths are `realpath -e` resolved.
 
 ## E2E eval failure blame protocol
 

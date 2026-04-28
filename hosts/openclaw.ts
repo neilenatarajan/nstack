@@ -63,7 +63,6 @@ const openclaw: HostConfig = {
   },
 
   install: {
-    prefixable: false,
     linkingStrategy: 'symlink-generated',
   },
 

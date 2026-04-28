@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+# nstack-registry — manage the global project registry at ~/.nstack/projects.yaml
+#
+# The registry is a path-keyed map of nstack projects on this machine. It exists
+# to enable cross-project operations (cross-project learnings search, retro)
+# without re-solving the discovery problem each time. It is NOT a privacy boundary
+# by itself — opted-out projects (cross_project_learnings=false) are simply not
+# registered. The actual write authorization for the global learnings archive
+# lives in nstack-learnings-log.
+#
+# Registry is keyed by the realpath of the repo root (NOT by slug) so that
+# multiple Conductor worktrees of the same repo each get their own entry.
+# Slug is stored as metadata.
+#
+# Usage:
+#   nstack-registry add                     — register the current cwd's repo (idempotent)
+#   nstack-registry list                    — print registered projects (TSV)
+#   nstack-registry status                  — am I registered? what's my opt-in state?
+#   nstack-registry prune [--dry-run]       — mark archived for paths that no longer exist
+#   nstack-registry remove --local          — remove the current cwd's entry
+#   nstack-registry remove --path <p>       — remove the specified path
+#   nstack-registry remove --global         — remove ALL entries for current slug (uninstall)
+#
+# Notes:
+#   - `add` is the canonical way to enter the registry; called from skill preambles
+#     after the cross-project prompt has been answered (cross_project_learnings=true).
+#   - If cross_project_learnings is unset/false locally, `add` is a no-op (silent).
+#   - All file writes are flock-protected via scripts/internal/lock.sh.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_TOOLS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCK_HELPER="$REPO_TOOLS_ROOT/scripts/internal/lock.sh"
+
+# Source the lock helper. Fall back to no-op lock if missing (very early bootstrap).
+if [ -f "$LOCK_HELPER" ]; then
+  # shellcheck disable=SC1090
+  source "$LOCK_HELPER"
+else
+  nstack_with_lock() { local _lf="$1" _to="$2"; shift 2; "$@"; }
+fi
+
+GLOBAL_DIR="${NSTACK_STATE_DIR:-$HOME/.nstack}"
+REGISTRY_FILE="$GLOBAL_DIR/projects.yaml"
+LOCK_FILE="$GLOBAL_DIR/.registry.lock"
+
+# Resolve current repo root + slug
+_resolve_repo() {
+  local repo_root
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  if [ -z "$repo_root" ]; then
+    REPO_REAL=""
+    REPO_SLUG=""
+    return 1
+  fi
+  # realpath -e fails if the path doesn't exist; should never happen for a git repo
+  if command -v realpath >/dev/null 2>&1; then
+    REPO_REAL=$(realpath "$repo_root" 2>/dev/null || echo "$repo_root")
+  else
+    REPO_REAL=$(cd "$repo_root" && pwd -P)
+  fi
+  REPO_SLUG=$(eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)" && echo "${SLUG:-}") 2>/dev/null || REPO_SLUG=""
+  if [ -z "${REPO_SLUG:-}" ]; then
+    eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
+    REPO_SLUG="${SLUG:-}"
+  fi
+  return 0
+}
+
+# Validate slug format (defense-in-depth)
+_validate_slug() {
+  if ! printf '%s' "$1" | grep -qE '^[a-zA-Z0-9._-]+$'; then
+    echo "nstack-registry: invalid slug format: $1" >&2
+    return 1
+  fi
+}
+
+# Validate path: must be absolute, no .. segments, no embedded newlines/quotes/colons.
+# Embedded special chars would corrupt the YAML registry on round-trip.
+_validate_path() {
+  local p="$1"
+  case "$p" in
+    /*) ;;
+    *) echo "nstack-registry: path must be absolute: $p" >&2; return 1 ;;
+  esac
+  case "$p" in
+    *..*) echo "nstack-registry: path must not contain .. segments: $p" >&2; return 1 ;;
+  esac
+  # Reject control characters, double quotes (would break YAML key), and `:` (YAML separator)
+  case "$p" in
+    *$'\n'*|*$'\r'*|*$'\t'*) echo "nstack-registry: path must not contain control characters: $p" >&2; return 1 ;;
+    *\"*) echo "nstack-registry: path must not contain double quotes: $p" >&2; return 1 ;;
+  esac
+}
+
+# Read whether cross-project sharing is enabled for the current repo
+_is_opted_in() {
+  local val
+  val=$("$SCRIPT_DIR/nstack-config" get cross_project_learnings 2>/dev/null || echo "")
+  [ "$val" = "true" ]
+}
+
+# Atomic write via temp + rename
+_atomic_write() {
+  local target="$1" content="$2"
+  mkdir -p "$(dirname "$target")"
+  local tmp
+  tmp="$(mktemp "${target}.XXXXXX")"
+  printf '%s' "$content" > "$tmp"
+  mv "$tmp" "$target"
+}
+
+# Read the registry as bash-parseable lines: "path\tslug\tadded\tlast_seen\tarchived"
+# Empty if registry doesn't exist.
+_read_registry_tsv() {
+  [ ! -f "$REGISTRY_FILE" ] && return 0
+  awk '
+    /^projects:[[:space:]]*$/ { in_projects=1; next }
+    /^[a-zA-Z]/ && !/^projects:/ { in_projects=0 }
+    in_projects && /^  "[^"]+":[[:space:]]*$/ {
+      # Path line: "  "/Users/neil/code/foo":"
+      gsub(/^  "/, ""); gsub(/":[[:space:]]*$/, "")
+      path=$0; slug=""; added=""; last_seen=""; archived="false"
+      next
+    }
+    in_projects && /^    slug:/ { sub(/^    slug:[[:space:]]*/, ""); slug=$0; next }
+    in_projects && /^    added:/ { sub(/^    added:[[:space:]]*/, ""); added=$0; next }
+    in_projects && /^    last_seen:/ { sub(/^    last_seen:[[:space:]]*/, ""); last_seen=$0; next }
+    in_projects && /^    archived:/ { sub(/^    archived:[[:space:]]*/, ""); archived=$0
+      printf "%s\t%s\t%s\t%s\t%s\n", path, slug, added, last_seen, archived
+    }
+  ' "$REGISTRY_FILE"
+}
+
+# Write the registry from TSV lines on stdin
+_write_registry_from_tsv() {
+  local content="# nstack project registry — generated, edit manually with caution.
+# Keyed by realpath. Same slug can have multiple paths (Conductor worktrees).
+# See docs/migrations/v0.18.0.0.md for semantics.
+projects:
+"
+  while IFS=$'\t' read -r path slug added last_seen archived; do
+    [ -z "$path" ] && continue
+    content+="  \"$path\":
+    slug: $slug
+    added: $added
+    last_seen: $last_seen
+    archived: $archived
+"
+  done
+  _atomic_write "$REGISTRY_FILE" "$content"
+}
+
+# Add or update an entry. Idempotent.
+_do_add() {
+  local now path slug
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  path="$1"; slug="$2"
+
+  local tmp_tsv
+  tmp_tsv=$(mktemp)
+  local found=0
+  while IFS=$'\t' read -r p s added last_seen archived; do
+    [ -z "$p" ] && continue
+    if [ "$p" = "$path" ]; then
+      # Update last_seen, keep added, un-archive
+      printf '%s\t%s\t%s\t%s\t%s\n' "$p" "$s" "$added" "$now" "false" >> "$tmp_tsv"
+      found=1
+    else
+      printf '%s\t%s\t%s\t%s\t%s\n' "$p" "$s" "$added" "$last_seen" "$archived" >> "$tmp_tsv"
+    fi
+  done < <(_read_registry_tsv)
+  if [ "$found" = "0" ]; then
+    printf '%s\t%s\t%s\t%s\t%s\n' "$path" "$slug" "$now" "$now" "false" >> "$tmp_tsv"
+  fi
+  _write_registry_from_tsv < "$tmp_tsv"
+  rm -f "$tmp_tsv"
+}
+
+_do_remove_path() {
+  local target_path="$1"
+  local tmp_tsv
+  tmp_tsv=$(mktemp)
+  while IFS=$'\t' read -r p s added last_seen archived; do
+    [ -z "$p" ] && continue
+    [ "$p" = "$target_path" ] && continue
+    printf '%s\t%s\t%s\t%s\t%s\n' "$p" "$s" "$added" "$last_seen" "$archived" >> "$tmp_tsv"
+  done < <(_read_registry_tsv)
+  _write_registry_from_tsv < "$tmp_tsv"
+  rm -f "$tmp_tsv"
+}
+
+_do_remove_slug() {
+  local target_slug="$1"
+  local tmp_tsv
+  tmp_tsv=$(mktemp)
+  while IFS=$'\t' read -r p s added last_seen archived; do
+    [ -z "$p" ] && continue
+    [ "$s" = "$target_slug" ] && continue
+    printf '%s\t%s\t%s\t%s\t%s\n' "$p" "$s" "$added" "$last_seen" "$archived" >> "$tmp_tsv"
+  done < <(_read_registry_tsv)
+  _write_registry_from_tsv < "$tmp_tsv"
+  rm -f "$tmp_tsv"
+}
+
+_do_prune() {
+  local dry_run="$1"
+  local tmp_tsv
+  tmp_tsv=$(mktemp)
+  local archived_count=0
+  while IFS=$'\t' read -r p s added last_seen archived; do
+    [ -z "$p" ] && continue
+    if [ -d "$p" ]; then
+      printf '%s\t%s\t%s\t%s\t%s\n' "$p" "$s" "$added" "$last_seen" "$archived" >> "$tmp_tsv"
+    else
+      archived_count=$((archived_count+1))
+      if [ "$dry_run" = "1" ]; then
+        echo "WOULD ARCHIVE: $p (slug=$s)"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$p" "$s" "$added" "$last_seen" "$archived" >> "$tmp_tsv"
+      else
+        echo "ARCHIVED: $p (slug=$s)"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$p" "$s" "$added" "$last_seen" "true" >> "$tmp_tsv"
+      fi
+    fi
+  done < <(_read_registry_tsv)
+  if [ "$dry_run" != "1" ]; then
+    _write_registry_from_tsv < "$tmp_tsv"
+  fi
+  rm -f "$tmp_tsv"
+  echo "$archived_count entries would be archived." >&"$( [ "$dry_run" = "1" ] && echo 1 || echo 2 )"
+}
+
+case "${1:-}" in
+  add)
+    if ! _resolve_repo; then
+      # Not in a git repo — silent no-op (preamble call site)
+      exit 0
+    fi
+    if ! _is_opted_in; then
+      # Opted out (or unset) — silent no-op
+      exit 0
+    fi
+    _validate_slug "$REPO_SLUG"
+    _validate_path "$REPO_REAL"
+    nstack_with_lock "$LOCK_FILE" 10 _do_add "$REPO_REAL" "$REPO_SLUG"
+    ;;
+  list)
+    if [ ! -f "$REGISTRY_FILE" ]; then
+      echo "(no projects registered — registry at $REGISTRY_FILE does not exist)"
+      exit 0
+    fi
+    printf 'PATH\tSLUG\tADDED\tLAST_SEEN\tARCHIVED\n'
+    _read_registry_tsv
+    ;;
+  status)
+    if ! _resolve_repo; then
+      echo "not in a git repo"
+      exit 0
+    fi
+    optin_state="false"
+    _is_opted_in && optin_state="true"
+    echo "repo:                 $REPO_REAL"
+    echo "slug:                 $REPO_SLUG"
+    echo "cross_project_learnings: $optin_state"
+    if [ ! -f "$REGISTRY_FILE" ]; then
+      echo "registered:           no (registry empty)"
+      exit 0
+    fi
+    line=$(_read_registry_tsv | awk -F'\t' -v p="$REPO_REAL" '$1==p { print }')
+    if [ -z "$line" ]; then
+      echo "registered:           no"
+    else
+      added=$(printf '%s' "$line" | awk -F'\t' '{print $3}')
+      last_seen=$(printf '%s' "$line" | awk -F'\t' '{print $4}')
+      archived=$(printf '%s' "$line" | awk -F'\t' '{print $5}')
+      echo "registered:           yes"
+      echo "added:                $added"
+      echo "last_seen:            $last_seen"
+      echo "archived:             $archived"
+    fi
+    ;;
+  prune)
+    dry=0
+    [ "${2:-}" = "--dry-run" ] && dry=1
+    nstack_with_lock "$LOCK_FILE" 10 _do_prune "$dry"
+    ;;
+  remove)
+    shift
+    SCOPE=""
+    TARGET_PATH=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --local)  SCOPE="local"; shift ;;
+        --global) SCOPE="global"; shift ;;
+        --path)   SCOPE="path"; TARGET_PATH="${2:-}"; shift 2 ;;
+        *) echo "Unknown remove flag: $1" >&2; exit 1 ;;
+      esac
+    done
+    case "$SCOPE" in
+      local)
+        if ! _resolve_repo; then
+          echo "nstack-registry: not in a git repo (use --path or --global)" >&2
+          exit 1
+        fi
+        _validate_path "$REPO_REAL"
+        nstack_with_lock "$LOCK_FILE" 10 _do_remove_path "$REPO_REAL"
+        ;;
+      path)
+        if [ -z "$TARGET_PATH" ]; then
+          echo "nstack-registry: --path requires a value" >&2; exit 1
+        fi
+        _validate_path "$TARGET_PATH"
+        nstack_with_lock "$LOCK_FILE" 10 _do_remove_path "$TARGET_PATH"
+        ;;
+      global)
+        if ! _resolve_repo; then
+          echo "nstack-registry: not in a git repo (use --path)" >&2
+          exit 1
+        fi
+        _validate_slug "$REPO_SLUG"
+        nstack_with_lock "$LOCK_FILE" 10 _do_remove_slug "$REPO_SLUG"
+        ;;
+      *)
+        echo "Usage: nstack-registry remove [--local | --path <p> | --global]" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  ""|--help|-h|help)
+    sed -n '2,30p' "$0" | sed 's/^# //;s/^#//'
+    exit 0
+    ;;
+  *)
+    echo "Unknown subcommand: $1" >&2
+    echo "Run 'nstack-registry --help' for usage." >&2
+    exit 1
+    ;;
+esac

@@ -36,7 +36,6 @@ const cursor: HostConfig = {
   },
 
   install: {
-    prefixable: false,
     linkingStrategy: 'symlink-generated',
   },
 

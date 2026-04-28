@@ -8,7 +8,7 @@ import fs from "fs";
 import path from "path";
 
 export interface GalleryOptions {
-  designsDir: string; // ~/.nstack/projects/$SLUG/designs/
+  designsDir: string; // .nstack/designs/ (in repo root)
   output: string;
 }
 

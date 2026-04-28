@@ -66,7 +66,7 @@ export const COMMANDS = new Map<string, {
   }],
   ["gallery", {
     description: "Generate HTML timeline of all design explorations for a project",
-    usage: "gallery --designs-dir ~/.nstack/projects/$SLUG/designs/ --output /path/gallery.html",
+    usage: "gallery --designs-dir .nstack/designs/ --output /path/gallery.html",
     flags: ["--designs-dir", "--output"],
   }],
   ["serve", {

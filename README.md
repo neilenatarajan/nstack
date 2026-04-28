@@ -159,12 +159,11 @@ OpenClaw spawns Claude Code sessions, so nstack skills work automatically. See [
 nstack stores settings in `~/.nstack/config.yaml`. Common options:
 
 ```yaml
-skill_prefix: false    # true = /nstack-qa, false = /qa
 proactive: true        # auto-suggest skills based on context
 auto_upgrade: false    # auto-update on session start
 ```
 
-Change with: `./setup --prefix` / `./setup --no-prefix`, or say "stop suggesting" to disable proactive mode.
+All skills are prefixed with `nstack-` (e.g., `/nstack-qa`, `/nstack-ship`). Say "stop suggesting" to disable proactive mode.
 
 ## Troubleshooting
 
@@ -173,10 +172,6 @@ Change with: `./setup --prefix` / `./setup --no-prefix`, or say "stop suggesting
 **`/browse` fails?** `cd ~/.claude/skills/nstack && bun install && bun run build`
 
 **Stale install?** Run `/nstack-upgrade` or set `auto_upgrade: true` in `~/.nstack/config.yaml`
-
-**Want shorter commands?** `./setup --no-prefix` switches `/nstack-qa` to `/qa`.
-
-**Want namespaced commands?** `./setup --prefix` switches `/qa` to `/nstack-qa`.
 
 **Codex skill loading errors?** `cd ~/.codex/skills/nstack && git pull && ./setup --host codex`
 

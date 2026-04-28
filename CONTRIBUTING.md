@@ -24,15 +24,21 @@ bin/dev-teardown               # deactivate — back to your global install
 
 nstack automatically learns from failures. At the end of every skill session, the agent
 reflects on what went wrong (CLI errors, wrong approaches, project quirks) and logs
-operational learnings to `~/.nstack/projects/{slug}/learnings.jsonl`. Future sessions
-surface these learnings automatically, so nstack gets smarter on your codebase over time.
+operational learnings to `.nstack/learnings.jsonl` in your repo. Future sessions surface
+these learnings automatically, so nstack gets smarter on your codebase over time.
+
+If you opt in to cross-project sharing (`nstack-config set --local
+cross_project_learnings true`, default `false`), each learning is also dual-written to a
+durable global archive at `~/.nstack/learnings.jsonl` so it survives repo deletion. See
+`docs/migrations/v0.18.0.0.md` for the privacy model.
 
 No setup needed. Learnings are logged automatically. View them with `/learn`.
 
 ### The contributor workflow
 
 1. **Use nstack normally** — operational learnings are captured automatically
-2. **Check your learnings:** `/learn` or `ls ~/.nstack/projects/*/learnings.jsonl`
+2. **Check your learnings:** `/learn` or `cat .nstack/learnings.jsonl` (per-repo) /
+   `cat ~/.nstack/learnings.jsonl` (cross-project archive, if opted in)
 3. **Fork and clone nstack** (if you haven't already)
 4. **Symlink your fork into the project where you hit the bug:**
    ```bash
@@ -40,8 +46,8 @@ No setup needed. Learnings are logged automatically. View them with `/learn`.
    ln -sfn /path/to/your/nstack-fork .claude/skills/nstack
    cd .claude/skills/nstack && bun install && bun run build && ./setup
    ```
-   Setup creates per-skill directories with SKILL.md symlinks inside (`qa/SKILL.md -> nstack/qa/SKILL.md`)
-   and asks your prefix preference. Pass `--no-prefix` to skip the prompt and use short names.
+   Setup creates per-skill directories with SKILL.md symlinks inside (`nstack-qa/SKILL.md -> nstack/qa/SKILL.md`).
+   All skills are prefixed with `nstack-` (e.g., `/nstack-qa`, `/nstack-ship`).
 5. **Fix the issue** — your changes are live immediately in this project
 6. **Test by actually using nstack** — do the thing that annoyed you, verify it's fixed
 7. **Open a PR from your fork**
@@ -64,9 +70,9 @@ your local edits instead of the global install.
 nstack/                          <- your working tree
 ├── .claude/skills/              <- created by dev-setup (gitignored)
 │   ├── nstack -> ../../         <- symlink back to repo root
-│   ├── review/                  <- real directory (short name, default)
+│   ├── nstack-review/           <- real directory (always nstack- prefixed)
 │   │   └── SKILL.md -> nstack/review/SKILL.md
-│   ├── ship/                    <- or nstack-review/, nstack-ship/ if --prefix
+│   ├── nstack-ship/
 │   │   └── SKILL.md -> nstack/ship/SKILL.md
 │   └── ...                      <- one directory per skill
 ├── review/
@@ -81,9 +87,8 @@ nstack/                          <- your working tree
 
 Setup creates real directories (not symlinks) at the top level with a SKILL.md
 symlink inside. This ensures Claude discovers them as top-level skills, not nested
-under `nstack/`. Names depend on your prefix setting (`~/.nstack/config.yaml`).
-Short names (`/review`, `/ship`) are the default. Run `./setup --prefix` if you
-prefer namespaced names (`/nstack-review`, `/nstack-ship`).
+under `nstack/`. All skills are prefixed with `nstack-` (e.g., `/nstack-review`,
+`/nstack-ship`).
 
 ## Day-to-day workflow
 
@@ -345,13 +350,11 @@ the `nstack/` directory itself. Run `./setup` to create them:
 cd .claude/skills/nstack && bun install && bun run build && ./setup
 ```
 
-Setup will ask whether you want short names (`/qa`) or namespaced (`/nstack-qa`).
-Your choice is saved to `~/.nstack/config.yaml` and remembered for future runs.
-To skip the prompt, pass `--no-prefix` (short names) or `--prefix` (namespaced).
+All skills are prefixed with `nstack-` (e.g., `/nstack-qa`, `/nstack-ship`).
 
 ### Step 3: Develop
 
-Edit a template, run `bun run gen:skill-docs`, and the next `/review` or `/qa`
+Edit a template, run `bun run gen:skill-docs`, and the next `/nstack-review` or `/nstack-qa`
 call picks it up immediately. No restart needed.
 
 ### Going back to the stable global install
@@ -362,19 +365,8 @@ Remove the project-local symlink. Claude Code falls back to `~/.claude/skills/ns
 rm .claude/skills/nstack
 ```
 
-The per-skill directories (`qa/`, `ship/`, etc.) contain SKILL.md symlinks that point
+The per-skill directories (`nstack-qa/`, `nstack-ship/`, etc.) contain SKILL.md symlinks that point
 to `nstack/...`, so they'll resolve to the global install automatically.
-
-### Switching prefix mode
-
-If you installed nstack with one prefix setting and want to switch:
-
-```bash
-cd .claude/skills/nstack && ./setup --no-prefix   # switch to /qa, /ship
-cd .claude/skills/nstack && ./setup --prefix       # switch to /nstack-qa, /nstack-ship
-```
-
-Setup cleans up the old symlinks automatically. No manual cleanup needed.
 
 ### Alternative: point your global install at a branch
 
@@ -452,6 +444,19 @@ Failures are logged but never block the upgrade.
 Migrations are tested as part of `bun test` (tier 1, free). The test suite
 verifies that all migration scripts in `nstack-upgrade/migrations/` are
 executable and parse without syntax errors.
+
+### Rollback honesty
+
+Most nstack migrations are forward-only. Specifically, the v0.18.0.0 migration
+moves project documents from `~/.nstack/projects/$SLUG/` into per-repo
+`.nstack/` directories. The legacy state is backed up to
+`~/.nstack/projects.v0.17-backup/`, but **any learnings, designs, or plans
+logged after migration exist only at the new local paths and are invisible to
+v0.17 binaries.** Downgrading to v0.17 means losing post-migration writes — no
+amount of cleanup makes the asymmetry symmetric.
+
+If you must roll back: restore the backup, downgrade nstack, accept that
+post-migration work is gone. We don't paper over this.
 
 ## Shipping your changes
 

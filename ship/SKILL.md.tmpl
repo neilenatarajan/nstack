@@ -643,13 +643,13 @@ If Step 8.5 created a docs commit, re-edit the PR/MR body to include the latest 
 Log coverage and plan completion data so `/retro` can track trends:
 
 ```bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p .nstack
 ```
 
-Append to `~/.nstack/projects/$SLUG/$BRANCH-reviews.jsonl`:
+Append to `.nstack/$BRANCH-reviews.jsonl`:
 
 ```bash
-echo '{"skill":"ship","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"VERSION","branch":"BRANCH"}' >> ~/.nstack/projects/$SLUG/$BRANCH-reviews.jsonl
+echo '{"skill":"ship","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","coverage_pct":COVERAGE_PCT,"plan_items_total":PLAN_TOTAL,"plan_items_done":PLAN_DONE,"verification_result":"VERIFY_RESULT","version":"VERSION","branch":"BRANCH"}' >> .nstack/$BRANCH-reviews.jsonl
 ```
 
 Substitute from earlier steps:

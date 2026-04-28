@@ -145,7 +145,6 @@ describe('nstack-config', () => {
     expect(content).toContain('proactive:');
     expect(content).toContain('telemetry:');
     expect(content).toContain('auto_upgrade:');
-    expect(content).toContain('skill_prefix:');
     expect(content).toContain('routing_declined:');
     expect(content).toContain('codex_reviews:');
     expect(content).toContain('skip_eng_review:');
