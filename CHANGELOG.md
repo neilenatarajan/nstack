@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.17.0.0] - 2026-04-28
+
+### Added
+
+- **`/content-ideation` skill — content strategist for LinkedIn.** Mines your recent commits, voice profile, audience, and (optionally) industry signal for 5-10 sharp post ideas with hooks, angles, and length targets ready to feed into `/write-draft`. Pipeline: `/content-ideation` → `/write-draft` (LinkedIn post format) → `/write-review`. The first non-engineering pathfinder skill.
+- **LinkedIn post format in `/write-draft`.** Auto-detects from "linkedin," "for linkedin," or explicit user request. Structures the draft as hook (<210 chars before "see more" truncation) + short paragraphs + question/CTA, with 1200-1500 char target and 0-3 hashtag cap. First-person, no thought-leader voice.
+- **LinkedIn post review in `/write-review`.** Format detection + structural rules (hook quality, paragraph length, char target, hashtag restraint, voice check) so the full pipeline now stays LinkedIn-aware end to end.
+- **`ROADMAP.md`** — first public domain expansion plan. Engineering and Design are shipped, Content & Writing is the active pathfinder, Research/Legal/Finance/Strategy/Hiring are explicitly marked "Exploring" with a 30-day kill criterion for the pathfinder. Includes principles (thin harness fat skills, no MCP, multi-model review, privacy gates) and future architecture directions (universal workflow loop, company control plane).
+
+### Changed
+
+- **README opens with the whole-org vision.** "nstack turns Claude Code into your whole organization" replaces "your remote team." New "Content & Writing" skill table sits alongside the engineering one and links the pipeline. Sprint section gets a "beyond engineering" callout pointing at `ROADMAP.md`.
+- **`CLAUDE.md` and `install` skill routing rules expanded** to cover content-ideation, write-draft, write-review, research-synthesis, and research-peer-review. Fresh global installs now route content/writing requests correctly instead of falling back to ad-hoc answers.
+
 ## [0.16.6.1] - 2026-04-13
 
 ### Changed
