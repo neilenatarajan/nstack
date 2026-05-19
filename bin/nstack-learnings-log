@@ -4,6 +4,13 @@
 #
 # Append-only storage. Duplicates (same key+type) are resolved at read time
 # by nstack-learnings-search ("latest winner" per key+type).
+#
+# Validation threat model: protect the JSONL file from being corrupted by
+# malformed input. We check the *shape* of the input (must be a one-line
+# {...} object with no embedded control chars), not full JSON validity.
+# Readers (`nstack-learnings-search` etc.) handle parse errors gracefully,
+# so bad-but-shaped input is acceptable. If `jq` is on PATH we use it as a
+# stricter check on top, but it is not required.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
@@ -12,21 +19,51 @@ NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
 NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
 mkdir -p "$NSTACK_HOME/projects/$SLUG"
 
-INPUT="$1"
+VALIDATE_FAIL_REASON=
+_validate_json_shape() {
+  local raw="$1"
+  local trimmed="${raw#"${raw%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  if [[ -z "$trimmed" ]]; then VALIDATE_FAIL_REASON=empty; return 1; fi
+  if [[ "${trimmed:0:1}" != "{" || "${trimmed: -1}" != "}" ]]; then
+    VALIDATE_FAIL_REASON=shape; return 1
+  fi
+  if [[ "$raw" == *$'\n'* || "$raw" == *$'\r'* ]]; then
+    VALIDATE_FAIL_REASON=control; return 1
+  fi
+  if [[ "$raw" =~ [[:cntrl:]] ]]; then
+    VALIDATE_FAIL_REASON=control; return 1
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    if ! printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+      VALIDATE_FAIL_REASON=jq; return 1
+    fi
+  fi
+  VALIDATE_FAIL_REASON=
+  return 0
+}
 
-# Validate: input must be parseable JSON
-if ! printf '%s' "$INPUT" | bun -e "JSON.parse(await Bun.stdin.text())" 2>/dev/null; then
-  echo "nstack-learnings-log: invalid JSON, skipping" >&2
+INPUT="$1"
+if ! _validate_json_shape "$INPUT"; then
+  echo "nstack-learnings-log: input failed shape check ($VALIDATE_FAIL_REASON), skipping" >&2
   exit 1
 fi
 
-# Inject timestamp if not present
-if ! printf '%s' "$INPUT" | bun -e "const j=JSON.parse(await Bun.stdin.text()); if(!j.ts) process.exit(1)" 2>/dev/null; then
-  INPUT=$(printf '%s' "$INPUT" | bun -e "
-    const j = JSON.parse(await Bun.stdin.text());
-    j.ts = new Date().toISOString();
-    console.log(JSON.stringify(j));
-  " 2>/dev/null) || true
+# Inject `ts` if not present as a top-level key. Match `"ts":` anywhere
+# in the input — not anchored to position 1 — so that callers who put
+# `ts` later in the object don't get a duplicate `ts` prepended.
+# False-positive risk (`ts` appearing inside a string value) means we
+# skip injection when we shouldn't; that's strictly safer than producing
+# duplicate keys.
+if [[ ! "$INPUT" =~ \"ts\"[[:space:]]*: ]]; then
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  inp="${INPUT#"${INPUT%%[![:space:]]*}"}"
+  inp="${inp%"${inp##*[![:space:]]}"}"
+  if [[ "$inp" =~ ^\{[[:space:]]*\}$ ]]; then
+    INPUT="{\"ts\":\"$ts\"}"
+  else
+    INPUT="{\"ts\":\"$ts\",${inp#\{}"
+  fi
 fi
 
 echo "$INPUT" >> "$NSTACK_HOME/projects/$SLUG/learnings.jsonl"
