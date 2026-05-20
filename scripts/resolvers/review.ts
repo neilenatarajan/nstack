@@ -862,14 +862,7 @@ IMPACT: {HIGH|MEDIUM|LOW} — {what breaks or degrades if this stays undelivered
 **Only for discrepancies sourced from plan files** (not commit messages or TODOS.md), log a learning so future sessions know this pattern occurred:
 
 \`\`\`bash
-~/.claude/skills/nstack/bin/nstack-learnings-log '{
-  "type": "pitfall",
-  "key": "plan-delivery-gap-KEBAB_SUMMARY",
-  "insight": "Planned X but delivered Y because Z",
-  "confidence": 8,
-  "source": "observed",
-  "files": ["PLAN_FILE_PATH"]
-}'
+~/.claude/skills/nstack/bin/nstack-learnings-log '{"type":"pitfall","key":"plan-delivery-gap-KEBAB_SUMMARY","insight":"Planned X but delivered Y because Z","confidence":8,"source":"observed","files":["PLAN_FILE_PATH"]}'
 \`\`\`
 
 Replace KEBAB_SUMMARY with a kebab-case summary of the gap, and fill in the actual values.

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.7.0] - 2026-05-19
+
+### Fixed
+
+- **Logging now works reliably regardless of how you invoke nstack.** Previously, review logs and learnings logs would be rejected with a misleading "invalid JSON" error, and session timelines would be silently dropped, whenever the `bun` runtime was not on the system PATH. This happened every time Claude Code invoked the tools from a non-interactive subshell. The bash log tools (`nstack-review-log`, `nstack-learnings-log`, `nstack-timeline-log`) no longer depend on `bun` for input validation — they use a pure-bash shape check instead, so they work in any environment.
+- **Session timeline log no longer silently drops data.** `nstack-timeline-log` used to return exit 0 on validation failure, leaving callers to believe the event was recorded when it was not. It now fails loudly with a clear stderr message, so logging failures are visible instead of invisible.
+- **Timeline log preserves caller-supplied `ts` regardless of key position.** Previously, if the `ts` timestamp field appeared later in the input object (e.g., after `skill` and `event`), the tool would prepend a second `ts`, producing a duplicate-key JSONL entry. Now `ts` is detected wherever it appears in the input and only injected when truly missing.
+- **Timeline log rejects empty or null `skill`/`event` fields.** Restores the strictness of the prior JS implementation that empty-value bypassed.
+
+### Changed
+
+- **Documented `nstack-learnings-log` JSON examples are now single-line.** Multi-line JSON snippets in the `/review` skill template would have been rejected by the new shape check. The single-line form was always the correct format for JSONL writers; the docs now match.
+
 ## [0.16.6.1] - 2026-04-13
 
 ### Changed
