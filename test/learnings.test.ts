@@ -45,8 +45,8 @@ function runSearch(args: string = ''): string {
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nstack-learn-'));
-  slugDir = path.join(tmpDir, 'projects');
-  fs.mkdirSync(slugDir, { recursive: true });
+  // NSTACK_HOME is now used directly as the project data dir (no projects/$SLUG nesting)
+  slugDir = tmpDir;
 });
 
 afterEach(() => {
@@ -54,9 +54,7 @@ afterEach(() => {
 });
 
 function findLearningsFile(): string | null {
-  const projectDirs = fs.readdirSync(slugDir);
-  if (projectDirs.length === 0) return null;
-  const f = path.join(slugDir, projectDirs[0], 'learnings.jsonl');
+  const f = path.join(slugDir, 'learnings.jsonl');
   return fs.existsSync(f) ? f : null;
 }
 

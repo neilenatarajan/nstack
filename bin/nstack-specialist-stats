@@ -7,18 +7,16 @@
 # dispatches) or NEVER_GATE (security, data-migration — insurance policy).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
-PROJECT_DIR="$NSTACK_HOME/projects/$SLUG"
+source "$SCRIPT_DIR/nstack-project-dir"
 
-if [ ! -d "$PROJECT_DIR" ]; then
+if [ -z "$_NSTACK_PROJ" ] || [ ! -d "$_NSTACK_PROJ" ]; then
   echo "SPECIALIST_STATS: 0 reviews analyzed"
   exit 0
 fi
 
 # Collect all review JSONL files (strip ---CONFIG--- and ---HEAD--- footers)
 COMBINED=""
-for f in "$PROJECT_DIR"/*-reviews.jsonl; do
+for f in "$_NSTACK_PROJ"/*-reviews.jsonl; do
   [ -f "$f" ] || continue
   COMBINED="$COMBINED$(sed '/^---/,$d' "$f" 2>/dev/null)
 "

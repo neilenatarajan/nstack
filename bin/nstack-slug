@@ -7,7 +7,12 @@
 # shell injection when consumed via source or eval.
 set -euo pipefail
 
-CACHE_DIR="$HOME/.gstack/slug-cache"
+CACHE_DIR="$HOME/.nstack/slug-cache"
+# Migrate legacy cache from ~/.gstack/ if it exists
+if [ -d "$HOME/.gstack/slug-cache" ] && [ ! -d "$CACHE_DIR" ]; then
+  mkdir -p "$CACHE_DIR" 2>/dev/null || true
+  cp -a "$HOME/.gstack/slug-cache/." "$CACHE_DIR/" 2>/dev/null || true
+fi
 PROJECT_DIR="$(pwd)"
 # Encode absolute path as cache key: /Users/j/foo → _Users_j_foo
 CACHE_KEY=$(printf '%s' "$PROJECT_DIR" | tr '/' '_')

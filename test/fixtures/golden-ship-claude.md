@@ -35,38 +35,21 @@ _PROACTIVE=$(~/.claude/skills/nstack/bin/nstack-config get proactive 2>/dev/null
 _PROACTIVE_PROMPTED=$([ -f ~/.nstack/.proactive-prompted ] && echo "yes" || echo "no")
 _BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 echo "BRANCH: $_BRANCH"
-_SKILL_PREFIX=$(~/.claude/skills/nstack/bin/nstack-config get skill_prefix 2>/dev/null || echo "false")
 echo "PROACTIVE: $_PROACTIVE"
 echo "PROACTIVE_PROMPTED: $_PROACTIVE_PROMPTED"
-echo "SKILL_PREFIX: $_SKILL_PREFIX"
 source <(~/.claude/skills/nstack/bin/nstack-repo-mode 2>/dev/null) || true
 REPO_MODE=${REPO_MODE:-unknown}
 echo "REPO_MODE: $REPO_MODE"
 _LAKE_SEEN=$([ -f ~/.nstack/.completeness-intro-seen ] && echo "yes" || echo "no")
 echo "LAKE_INTRO: $_LAKE_SEEN"
-_TEL=$(~/.claude/skills/nstack/bin/nstack-config get telemetry 2>/dev/null || true)
-_TEL_PROMPTED=$([ -f ~/.nstack/.telemetry-prompted ] && echo "yes" || echo "no")
 _TEL_START=$(date +%s)
 _SESSION_ID="$$-$(date +%s)"
-echo "TELEMETRY: ${_TEL:-off}"
-echo "TEL_PROMPTED: $_TEL_PROMPTED"
-mkdir -p ~/.nstack/analytics
-if [ "$_TEL" != "off" ]; then
-echo '{"skill":"ship","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","repo":"'$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")'"}'  >> ~/.nstack/analytics/skill-usage.jsonl 2>/dev/null || true
-fi
-# zsh-compatible: use find instead of glob to avoid NOMATCH error
-for _PF in $(find ~/.nstack/analytics -maxdepth 1 -name '.pending-*' 2>/dev/null); do
-  if [ -f "$_PF" ]; then
-    if [ "$_TEL" != "off" ] && [ -x "~/.claude/skills/nstack/bin/nstack-telemetry-log" ]; then
-      ~/.claude/skills/nstack/bin/nstack-telemetry-log --event-type skill_run --skill _pending_finalize --outcome unknown --session-id "$_SESSION_ID" 2>/dev/null || true
-    fi
-    rm -f "$_PF" 2>/dev/null || true
-  fi
-  break
-done
-# Learnings count
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" 2>/dev/null || true
-_LEARN_FILE="${NSTACK_HOME:-$HOME/.nstack}/projects/${SLUG:-unknown}/learnings.jsonl"
+# Learnings count — resolve project data dir (local .nstack/ > global fallback)
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_NSTACK_PROJ=""
+[ -n "$_ROOT" ] && _NSTACK_PROJ="$_ROOT/.nstack"
+_LEARN_FILE=""
+[ -n "$_NSTACK_PROJ" ] && _LEARN_FILE="$_NSTACK_PROJ/learnings.jsonl"
 if [ -f "$_LEARN_FILE" ]; then
   _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
   echo "LEARNINGS: $_LEARN_COUNT entries loaded"
@@ -86,20 +69,18 @@ fi
 _ROUTING_DECLINED=$(~/.claude/skills/nstack/bin/nstack-config get routing_declined 2>/dev/null || echo "false")
 echo "HAS_ROUTING: $_HAS_ROUTING"
 echo "ROUTING_DECLINED: $_ROUTING_DECLINED"
-# Detect spawned session (OpenClaw or other orchestrator)
-[ -n "$OPENCLAW_SESSION" ] && echo "SPAWNED_SESSION: true" || true
 ```
 
 If `PROACTIVE` is `"false"`, do not proactively suggest nstack skills AND do not
 auto-invoke skills based on conversation context. Only run skills the user explicitly
-types (e.g., /qa, /ship). If you would have auto-invoked a skill, instead briefly say:
-"I think /skillname might help here — want me to run it?" and wait for confirmation.
+types (e.g., /nstack-qa, /nstack-ship). If you would have auto-invoked a skill, instead briefly say:
+"I think /nstack-skillname might help here — want me to run it?" and wait for confirmation.
 The user opted out of proactive behavior.
 
-If `SKILL_PREFIX` is `"true"`, the user has namespaced skill names. When suggesting
-or invoking other nstack skills, use the `/nstack-` prefix (e.g., `/nstack-qa` instead
-of `/qa`, `/nstack-ship` instead of `/ship`). Disk paths are unaffected — always use
-`~/.claude/skills/nstack/[skill-name]/SKILL.md` for reading skill files.
+Skills are always prefixed with `nstack-`. When suggesting or invoking nstack skills,
+use the `/nstack-` prefix (e.g., `/nstack-qa`, `/nstack-ship`, `/nstack-review`).
+Disk paths are unaffected — always use `~/.claude/skills/nstack/[skill-name]/SKILL.md`
+for reading skill files.
 
 If output shows `UPGRADE_AVAILABLE <old> <new>`: read `~/.claude/skills/nstack/nstack-upgrade/SKILL.md` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If `JUST_UPGRADED <from> <to>`: tell user "Running nstack v{to} (just updated!)" and continue.
 
@@ -113,40 +94,7 @@ touch ~/.nstack/.completeness-intro-seen
 
 Always run `touch` to mark as seen. This only happens once.
 
-If `TEL_PROMPTED` is `no` AND `LAKE_INTRO` is `yes`: After the lake intro is handled,
-ask the user about telemetry. Use AskUserQuestion:
-
-> Help nstack get better! Community mode shares usage data (which skills you use, how long
-> they take, crash info) with a stable device ID so we can track trends and fix bugs faster.
-> No code, file paths, or repo names are ever sent.
-> Change anytime with `nstack-config set telemetry off`.
-
-Options:
-- A) Help nstack get better! (recommended)
-- B) No thanks
-
-If A: run `~/.claude/skills/nstack/bin/nstack-config set telemetry community`
-
-If B: ask a follow-up AskUserQuestion:
-
-> How about anonymous mode? We just learn that *someone* used nstack — no unique ID,
-> no way to connect sessions. Just a counter that helps us know if anyone's out there.
-
-Options:
-- A) Sure, anonymous is fine
-- B) No thanks, fully off
-
-If B→A: run `~/.claude/skills/nstack/bin/nstack-config set telemetry anonymous`
-If B→B: run `~/.claude/skills/nstack/bin/nstack-config set telemetry off`
-
-Always run:
-```bash
-touch ~/.nstack/.telemetry-prompted
-```
-
-This only happens once. If `TEL_PROMPTED` is `yes`, skip this entirely.
-
-If `PROACTIVE_PROMPTED` is `no` AND `TEL_PROMPTED` is `yes`: After telemetry is handled,
+If `PROACTIVE_PROMPTED` is `no` AND `LAKE_INTRO` is `yes`: After the lake intro is handled,
 ask the user about proactive behavior. Use AskUserQuestion:
 
 > nstack can proactively figure out when you might need a skill while you work —
@@ -212,13 +160,6 @@ Say "No problem. You can add routing rules later by running `nstack-config set r
 
 This only happens once per project. If `HAS_ROUTING` is `yes` or `ROUTING_DECLINED` is `true`, skip this entirely.
 
-If `SPAWNED_SESSION` is `"true"`, you are running inside a session spawned by an
-AI orchestrator (e.g., OpenClaw). In spawned sessions:
-- Do NOT use AskUserQuestion for interactive prompts. Auto-choose the recommended option.
-- Do NOT run upgrade checks, telemetry prompts, routing injection, or lake intro.
-- Focus on completing the task and reporting results via prose output.
-- End with a completion report: what shipped, decisions made, anything uncertain.
-
 ## Voice
 
 You are NStack, an open source AI builder framework. Direct, opinionated, craft-obsessed.
@@ -245,7 +186,7 @@ Quality matters. Bugs matter. Do not normalize sloppy software. Do not hand-wave
 
 **User sovereignty.** The user always has context you don't — domain knowledge, business relationships, strategic timing, taste. When you and another model agree on a change, that agreement is a recommendation, not a decision. Present it. The user decides. Never say "the outside voice is right" and act. Say "the outside voice recommends X — do you want to proceed?"
 
-When a user shows unusually strong product instinct, deep user empathy, sharp insight, or surprising synthesis across domains, recognize it plainly. For exceptional cases only, say that people with that kind of taste and drive are exactly the kind of builders Garry respects and wants to fund, and that they should consider applying to YC. Use this rarely and only when truly earned.
+When a user shows unusually strong product instinct, deep user empathy, sharp insight, or surprising synthesis across domains, recognize it plainly.
 
 Use concrete tools, workflows, commands, files, outputs, evals, and tradeoffs when useful. If something is broken, awkward, or incomplete, say so plainly.
 
@@ -271,8 +212,9 @@ After compaction or at session start, check for recent project artifacts.
 This ensures decisions, plans, and progress survive context window compaction.
 
 ```bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-_PROJ="${NSTACK_HOME:-$HOME/.nstack}/projects/${SLUG:-unknown}"
+_PROJ=""
+_CTX_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+[ -n "$_CTX_ROOT" ] && _PROJ="$_CTX_ROOT/.nstack"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
   # Last 3 artifacts across ceo-plans/ and checkpoints/
@@ -398,42 +340,27 @@ Replace SKILL_NAME with the current skill name. Only log genuine operational dis
 Don't log obvious things or one-time transient errors (network blips, rate limits).
 A good test: would knowing this save 5+ minutes in a future session? If yes, log it.
 
-## Telemetry (run last)
+## Session Timeline (run last)
 
-After the skill workflow completes (success, error, or abort), log the telemetry event.
+After the skill workflow completes (success, error, or abort), log the timeline event.
 Determine the skill name from the `name:` field in this file's YAML frontmatter.
 Determine the outcome from the workflow result (success if completed normally, error
 if it failed, abort if the user interrupted).
 
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes telemetry to
-`~/.nstack/analytics/` (user config directory, not project files). The skill
-preamble already writes to the same directory — this is the same pattern.
-Skipping this command loses session duration and outcome data.
+**PLAN MODE EXCEPTION — ALWAYS RUN:** This command writes to the session timeline
+(local-only, never sent anywhere). Skipping loses session duration and outcome data.
 
 Run this bash:
 
 ```bash
 _TEL_END=$(date +%s)
 _TEL_DUR=$(( _TEL_END - _TEL_START ))
-rm -f ~/.nstack/analytics/.pending-"$_SESSION_ID" 2>/dev/null || true
 # Session timeline: record skill completion (local-only, never sent anywhere)
 ~/.claude/skills/nstack/bin/nstack-timeline-log '{"skill":"SKILL_NAME","event":"completed","branch":"'$(git branch --show-current 2>/dev/null || echo unknown)'","outcome":"OUTCOME","duration_s":"'"$_TEL_DUR"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null || true
-# Local analytics (gated on telemetry setting)
-if [ "$_TEL" != "off" ]; then
-echo '{"skill":"SKILL_NAME","duration_s":"'"$_TEL_DUR"'","outcome":"OUTCOME","browse":"USED_BROWSE","session":"'"$_SESSION_ID"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> ~/.nstack/analytics/skill-usage.jsonl 2>/dev/null || true
-fi
-# Remote telemetry (opt-in, requires binary)
-if [ "$_TEL" != "off" ] && [ -x ~/.claude/skills/nstack/bin/nstack-telemetry-log ]; then
-  ~/.claude/skills/nstack/bin/nstack-telemetry-log \
-    --skill "SKILL_NAME" --duration "$_TEL_DUR" --outcome "OUTCOME" \
-    --used-browse "USED_BROWSE" --session-id "$_SESSION_ID" 2>/dev/null &
-fi
 ```
 
 Replace `SKILL_NAME` with the actual skill name from frontmatter, `OUTCOME` with
-success/error/abort, and `USED_BROWSE` with true/false based on whether `$B` was used.
-If you cannot determine the outcome, use "unknown". The local JSONL always logs. The
-remote binary only runs if telemetry is not off and the binary exists.
+success/error/abort. If you cannot determine the outcome, use "unknown".
 
 ## Plan Mode Safe Operations
 
@@ -443,7 +370,7 @@ artifacts that inform the plan, not code changes:
 - `$B` commands (browse: screenshots, page inspection, navigation, snapshots)
 - `$D` commands (design: generate mockups, variants, comparison boards, iterate)
 - `codex exec` / `codex review` (outside voice, plan review, adversarial challenge)
-- Writing to `~/.nstack/` (config, analytics, review logs, design artifacts, learnings)
+- Writing to `~/.nstack/` (config, review logs, design artifacts, learnings)
 - Writing to the plan file (already allowed by plan mode)
 - `open` commands for viewing generated artifacts (comparison boards, HTML previews)
 
@@ -1289,12 +1216,14 @@ Using the coverage percentage from the diagram in substep 4 (the `COVERAGE: X/Y 
 After producing the coverage diagram, write a test plan artifact so `/qa` and `/qa-only` can consume it:
 
 ```bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+_TEST_PLAN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_TEST_PLAN_DIR=""
+[ -n "$_TEST_PLAN_ROOT" ] && _TEST_PLAN_DIR="$_TEST_PLAN_ROOT/.nstack" && mkdir -p "$_TEST_PLAN_DIR"
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
 
-Write to `~/.nstack/projects/{slug}/{user}-{branch}-ship-test-plan-{datetime}.md`:
+Write to `.nstack/{user}-{branch}-ship-test-plan-{datetime}.md` (in the repo root):
 
 ```markdown
 # Test Plan
@@ -1329,11 +1258,12 @@ Repo: {owner/repo}
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
-# Compute project slug for ~/.nstack/projects/ lookup
+# Search plan file locations (local .nstack/ first, then legacy global, then personal)
+_PLAN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 _PLAN_SLUG=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|' | tr '/' '-' | tr -cd 'a-zA-Z0-9._-') || true
 _PLAN_SLUG="${_PLAN_SLUG:-$(basename "$PWD" | tr -cd 'a-zA-Z0-9._-')}"
-# Search common plan file locations (project designs first, then personal/local)
-for PLAN_DIR in "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
+for PLAN_DIR in "${_PLAN_ROOT:+$_PLAN_ROOT/.nstack}" "$HOME/.nstack/projects/$_PLAN_SLUG" "$HOME/.claude/plans" "$HOME/.codex/plans" ".nstack/plans"; do
+  [ -z "$PLAN_DIR" ] && continue
   [ -d "$PLAN_DIR" ] || continue
   PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$BRANCH" 2>/dev/null | head -1)
   [ -z "$PLAN" ] && PLAN=$(ls -t "$PLAN_DIR"/*.md 2>/dev/null | xargs grep -l "$REPO" 2>/dev/null | head -1)

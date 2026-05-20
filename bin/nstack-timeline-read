@@ -3,14 +3,11 @@
 # Usage: nstack-timeline-read [--since "7 days ago"] [--limit N] [--branch NAME]
 #
 # Session timeline: local-only, never sent anywhere.
-# Reads ~/.nstack/projects/$SLUG/timeline.jsonl, filters, formats.
+# Reads .nstack/timeline.jsonl (in repo root), filters, formats.
 # Exit 0 silently if no timeline file exists.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
+source "$SCRIPT_DIR/nstack-project-dir"
 
 SINCE=""
 LIMIT=20
@@ -25,7 +22,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-TIMELINE_FILE="$NSTACK_HOME/projects/$SLUG/timeline.jsonl"
+[ -z "$_NSTACK_PROJ" ] && exit 0
+TIMELINE_FILE="$_NSTACK_PROJ/timeline.jsonl"
 
 if [ ! -f "$TIMELINE_FILE" ]; then
   exit 0

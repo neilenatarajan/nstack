@@ -307,9 +307,11 @@ Compare screenshots and observations across pages for:
 
 **Project-scoped:**
 \`\`\`bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+_DESIGN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_DESIGN_PROJ=""
+[ -n "$_DESIGN_ROOT" ] && _DESIGN_PROJ="$_DESIGN_ROOT/.nstack" && mkdir -p "$_DESIGN_PROJ"
 \`\`\`
-Write to: \`~/.nstack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+Write to: \`.nstack/{user}-{branch}-design-audit-{datetime}.md\` (in the repo root)
 
 **Baseline:** Write \`design-baseline.json\` for regression mode:
 \`\`\`json
@@ -847,9 +849,8 @@ Commands:
 - \`$D iterate --session /path/session.json --feedback "..." --output /path.png\` — iterate
 
 **CRITICAL PATH RULE:** All design artifacts (mockups, comparison boards, approved.json)
-MUST be saved to \`~/.nstack/projects/$SLUG/designs/\`, NEVER to \`.context/\`,
-\`docs/designs/\`, \`/tmp/\`, or any project-local directory. Design artifacts are USER
-data, not project files. They persist across branches, conversations, and workspaces.`;
+MUST be saved to \`.nstack/designs/\` (in the repo root), NEVER to \`.context/\`,
+\`docs/designs/\`, or \`/tmp/\`. Design artifacts are local project data (gitignored).`;
 }
 
 export function generateDesignMockup(ctx: TemplateContext): string {
@@ -873,8 +874,10 @@ Generating visual mockups of the proposed design... (say "skip" if you don't nee
 **Step 1: Set up the design directory**
 
 \`\`\`bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-_DESIGN_DIR=~/.nstack/projects/$SLUG/designs/mockup-$(date +%Y%m%d)
+_DESIGN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_DESIGN_DIR=""
+[ -n "$_DESIGN_ROOT" ] && _DESIGN_DIR="$_DESIGN_ROOT/.nstack/designs/mockup-$(date +%Y%m%d)"
+[ -z "$_DESIGN_DIR" ] && _DESIGN_DIR="/tmp/nstack-designs/mockup-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 \`\`\`

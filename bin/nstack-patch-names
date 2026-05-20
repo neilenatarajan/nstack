@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-# nstack-patch-names — patch name: field in SKILL.md frontmatter for prefix mode
-# Usage: nstack-patch-names <nstack-dir> <true|false|1|0>
+# nstack-patch-names — patch name: field in SKILL.md frontmatter to use nstack- prefix
+# Usage: nstack-patch-names <nstack-dir>
 set -euo pipefail
 
 NSTACK_DIR="$1"
-DO_PREFIX="$2"
-
-# Normalize prefix arg
-case "$DO_PREFIX" in true|1) DO_PREFIX=1 ;; *) DO_PREFIX=0 ;; esac
 
 PATCHED=0
 for skill_dir in "$NSTACK_DIR"/*/; do
@@ -17,14 +13,8 @@ for skill_dir in "$NSTACK_DIR"/*/; do
   cur=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]' || true)
   [ -z "$cur" ] && continue
   [ "$cur" = "nstack" ] && continue  # never prefix root skill
-  if [ "$DO_PREFIX" -eq 1 ]; then
-    case "$cur" in nstack-*) continue ;; esac
-    new="nstack-$cur"
-  else
-    case "$cur" in nstack-*) ;; *) continue ;; esac
-    [ "$dir_name" = "$cur" ] && continue  # inherently prefixed (nstack-upgrade)
-    new="${cur#nstack-}"
-  fi
+  case "$cur" in nstack-*) continue ;; esac  # already prefixed
+  new="nstack-$cur"
   tmp="$(mktemp "${skill_dir}/SKILL.md.XXXXXX")"
   sed "1,/^---$/s/^name:[[:space:]]*${cur}/name: ${new}/" "$skill_dir/SKILL.md" > "$tmp" && mv "$tmp" "$skill_dir/SKILL.md"
   PATCHED=$((PATCHED + 1))

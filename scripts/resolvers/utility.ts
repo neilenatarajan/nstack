@@ -5,7 +5,10 @@ export function generateSlugEval(ctx: TemplateContext): string {
 }
 
 export function generateSlugSetup(ctx: TemplateContext): string {
-  return `eval "$(${ctx.paths.binDir}/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG`;
+  return `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_NSTACK_PROJ=""
+[ -n "$_ROOT" ] && _NSTACK_PROJ="$_ROOT/.nstack" && mkdir -p "$_NSTACK_PROJ"
+eval "$(${ctx.paths.binDir}/nstack-slug 2>/dev/null)"`;
 }
 
 export function generateBaseBranchDetect(_ctx: TemplateContext): string {

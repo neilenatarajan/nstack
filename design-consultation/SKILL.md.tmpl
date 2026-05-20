@@ -55,7 +55,7 @@ Look for office-hours output:
 ```bash
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 {{SLUG_EVAL}}
-ls ~/.nstack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls .nstack/designs/*office-hours* 2>/dev/null | head -5
 ls .context/*office-hours* .context/attachments/*office-hours* 2>/dev/null | head -5
 ```
 
@@ -257,7 +257,7 @@ Generate AI-rendered mockups showing the proposed design system applied to reali
 
 ```bash
 eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
-_DESIGN_DIR=~/.nstack/projects/$SLUG/designs/design-system-$(date +%Y%m%d)
+_DESIGN_DIR=.nstack/designs/design-system-$(date +%Y%m%d)
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
 ```

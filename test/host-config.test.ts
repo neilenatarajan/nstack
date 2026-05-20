@@ -118,7 +118,7 @@ describe('validateHostConfig', () => {
       generation: { generateMetadata: false },
       pathRewrites: [],
       runtimeRoot: { globalSymlinks: ['bin'] },
-      install: { prefixable: false, linkingStrategy: 'symlink-generated' },
+      install: { linkingStrategy: 'symlink-generated' },
     };
   }
 
@@ -399,16 +399,6 @@ describe('golden-file regression', () => {
 // ─── Individual host config correctness ─────────────────────
 
 describe('host config correctness', () => {
-  test('claude is the only prefixable host', () => {
-    for (const config of ALL_HOST_CONFIGS) {
-      if (config.name === 'claude') {
-        expect(config.install.prefixable).toBe(true);
-      } else {
-        expect(config.install.prefixable).toBe(false);
-      }
-    }
-  });
-
   test('claude is the only host with real-dir-symlink strategy', () => {
     for (const config of ALL_HOST_CONFIGS) {
       if (config.name === 'claude') {

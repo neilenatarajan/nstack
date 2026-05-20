@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nstack-relink — re-create skill symlinks based on skill_prefix config
+# nstack-relink — re-create skill symlinks with nstack-* prefix
 #
 # Usage:
 #   nstack-relink
@@ -11,7 +11,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NSTACK_CONFIG="${SCRIPT_DIR}/nstack-config"
 
 # Detect install dir
 INSTALL_DIR="${NSTACK_INSTALL_DIR:-}"
@@ -33,9 +32,6 @@ fi
 SKILLS_DIR="${NSTACK_SKILLS_DIR:-$(dirname "$INSTALL_DIR")}"
 [ -d "$SKILLS_DIR" ] || mkdir -p "$SKILLS_DIR"
 
-# Read prefix setting
-PREFIX=$("$NSTACK_CONFIG" get skill_prefix 2>/dev/null || echo "false")
-
 # Helper: remove old skill entry (symlink or real directory with symlinked SKILL.md)
 _cleanup_skill_entry() {
   local entry="$1"
@@ -55,22 +51,13 @@ for skill_dir in "$INSTALL_DIR"/*/; do
   case "$skill" in bin|browse|design|docs|extension|lib|node_modules|scripts|test|.git|.github) continue ;; esac
   [ -f "$skill_dir/SKILL.md" ] || continue
 
-  if [ "$PREFIX" = "true" ]; then
-    # Don't double-prefix directories already named nstack-*
-    case "$skill" in
-      nstack-*) link_name="$skill" ;;
-      *)        link_name="nstack-$skill" ;;
-    esac
-    # Remove old flat entry if it exists (and isn't the same as the new link)
-    [ "$link_name" != "$skill" ] && _cleanup_skill_entry "$SKILLS_DIR/$skill"
-  else
-    link_name="$skill"
-    # Don't remove nstack-* dirs that are their real name (e.g., nstack-upgrade)
-    case "$skill" in
-      nstack-*) ;; # Already the real name, no old prefixed link to clean
-      *)        _cleanup_skill_entry "$SKILLS_DIR/nstack-$skill" ;;
-    esac
-  fi
+  # Always prefix — don't double-prefix directories already named nstack-*
+  case "$skill" in
+    nstack-*) link_name="$skill" ;;
+    *)        link_name="nstack-$skill" ;;
+  esac
+  # Remove old flat entry if it exists (and isn't the same as the new link)
+  [ "$link_name" != "$skill" ] && _cleanup_skill_entry "$SKILLS_DIR/$skill"
   target="$SKILLS_DIR/$link_name"
   # Upgrade old directory symlinks to real directories
   [ -L "$target" ] && rm -f "$target"
@@ -80,11 +67,7 @@ for skill_dir in "$INSTALL_DIR"/*/; do
   SKILL_COUNT=$((SKILL_COUNT + 1))
 done
 
-# Patch SKILL.md name: fields to match prefix setting
-"$INSTALL_DIR/bin/nstack-patch-names" "$INSTALL_DIR" "$PREFIX"
+# Patch SKILL.md name: fields to use nstack- prefix
+"$INSTALL_DIR/bin/nstack-patch-names" "$INSTALL_DIR"
 
-if [ "$PREFIX" = "true" ]; then
-  echo "Relinked $SKILL_COUNT skills as nstack-*"
-else
-  echo "Relinked $SKILL_COUNT skills as flat names"
-fi
+echo "Relinked $SKILL_COUNT skills as nstack-*"

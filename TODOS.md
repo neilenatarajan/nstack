@@ -503,6 +503,18 @@ Shipped: Default model changed to Sonnet for structure tests (~30), Opus retaine
 **Priority:** P3
 **Depends on:** Ref staleness Parts 1+2 (shipped)
 
+### Remove legacy project data fallback
+
+**What:** Remove the `~/.nstack/projects/$SLUG/` read fallback from `bin/nstack-project-dir` and all data scripts. After v0.17.0.0, project data lives in `.nstack/` at the repo root. The legacy fallback reads from the old global location when local is empty and prints a one-time warning.
+
+**Why:** Without an expiration date, both code paths get maintained forever. The fallback was added in v0.17.0.0 to avoid silent data loss during the transition. After 3 months or v0.18, users who haven't migrated can run the upgrade migration manually.
+
+**Context:** Added during eng review as a TODO per the outside voice's recommendation. The fallback is in `bin/nstack-project-dir` (the shared helper sourced by all data scripts). Removing it means deleting ~5 lines from that file.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** v0.17.0.0 landing and users having time to migrate
+
 ## Office Hours / Design
 
 ### Design docs → Supabase team store sync

@@ -2,8 +2,10 @@
  * Eval result persistence and comparison.
  *
  * EvalCollector accumulates test results, writes them to
- * ~/.nstack/projects/$SLUG/evals/{version}-{branch}-{tier}-{timestamp}.json,
- * prints a summary table, and auto-compares with the previous run.
+ * .nstack/evals/{version}-{branch}-{tier}-{timestamp}.json (local-first,
+ * v0.18+), with legacy fallback to ~/.nstack/projects/$SLUG/evals/ and
+ * finally ~/.nstack-dev/evals/. Prints a summary table, auto-compares with
+ * the previous run.
  *
  * Comparison functions are exported for reuse by the eval:compare CLI.
  */
@@ -17,12 +19,26 @@ const SCHEMA_VERSION = 1;
 const LEGACY_EVAL_DIR = path.join(os.homedir(), '.nstack-dev', 'evals');
 
 /**
- * Detect project-scoped eval dir via nstack-slug.
- * Falls back to legacy ~/.nstack-dev/evals/ if slug detection fails.
+ * Detect project-scoped eval dir.
+ *
+ * Order: local .nstack/evals/ (v0.18+, when in a git repo) -> legacy global
+ * ~/.nstack/projects/$SLUG/evals/ (pre-v0.18) -> ~/.nstack-dev/evals/.
  */
 export function getProjectEvalDir(): string {
   try {
-    // Try repo-local nstack-slug first, then global install
+    // 1. Local .nstack/evals/ in repo root (preferred, v0.18+)
+    const repoRoot = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+      stdio: 'pipe', timeout: 1000,
+    });
+    if (repoRoot.status === 0) {
+      const root = repoRoot.stdout?.toString().trim();
+      if (root) {
+        const dir = path.join(root, '.nstack', 'evals');
+        fs.mkdirSync(dir, { recursive: true });
+        return dir;
+      }
+    }
+    // 2. Legacy global location keyed by slug (pre-v0.18 fallback)
     const localSlug = spawnSync('bash', ['-c', '.claude/skills/nstack/bin/nstack-slug 2>/dev/null || ~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null'], {
       stdio: 'pipe', timeout: 3000,
     });
@@ -36,6 +52,7 @@ export function getProjectEvalDir(): string {
       }
     }
   } catch { /* fall through */ }
+  // 3. Last-resort global eval dir (no git, no slug)
   return LEGACY_EVAL_DIR;
 }
 

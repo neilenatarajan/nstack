@@ -13,7 +13,7 @@ import { getProjectEvalDir } from './eval-store';
 
 const NSTACK_DEV_DIR = path.join(os.homedir(), '.nstack-dev');
 const HEARTBEAT_PATH = path.join(NSTACK_DEV_DIR, 'e2e-live.json'); // heartbeat stays global
-const PROJECT_DIR = path.dirname(getProjectEvalDir()); // ~/.nstack/projects/$SLUG/
+const PROJECT_DIR = path.dirname(getProjectEvalDir()); // local .nstack/ (v0.18+) or legacy global
 
 /** Sanitize test name for use as filename: strip leading slashes, replace / with - */
 export function sanitizeTestName(name: string): string {

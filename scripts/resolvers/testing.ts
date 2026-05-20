@@ -401,12 +401,14 @@ The plan should be complete enough that when implementation begins, every test i
 After producing the coverage diagram, write a test plan artifact to the project directory so \`/qa\` and \`/qa-only\` can consume it as primary test input:
 
 \`\`\`bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+_TEST_PLAN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_TEST_PLAN_DIR=""
+[ -n "$_TEST_PLAN_ROOT" ] && _TEST_PLAN_DIR="$_TEST_PLAN_ROOT/.nstack" && mkdir -p "$_TEST_PLAN_DIR"
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 \`\`\`
 
-Write to \`~/.nstack/projects/{slug}/{user}-{branch}-eng-review-test-plan-{datetime}.md\`:
+Write to \`.nstack/{user}-{branch}-eng-review-test-plan-{datetime}.md\` (in the repo root):
 
 \`\`\`markdown
 # Test Plan
@@ -498,12 +500,14 @@ Using the coverage percentage from the diagram in substep 4 (the \`COVERAGE: X/Y
 After producing the coverage diagram, write a test plan artifact so \`/qa\` and \`/qa-only\` can consume it:
 
 \`\`\`bash
-eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)" && mkdir -p ~/.nstack/projects/$SLUG
+_TEST_PLAN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+_TEST_PLAN_DIR=""
+[ -n "$_TEST_PLAN_ROOT" ] && _TEST_PLAN_DIR="$_TEST_PLAN_ROOT/.nstack" && mkdir -p "$_TEST_PLAN_DIR"
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 \`\`\`
 
-Write to \`~/.nstack/projects/{slug}/{user}-{branch}-ship-test-plan-{datetime}.md\`:
+Write to \`.nstack/{user}-{branch}-ship-test-plan-{datetime}.md\` (in the repo root):
 
 \`\`\`markdown
 # Test Plan

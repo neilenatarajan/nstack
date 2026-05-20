@@ -2095,13 +2095,7 @@ describe('setup script validation', () => {
     expect(cleanupOldBody).toContain('-L "$old_target/SKILL.md"');
     expect(cleanupOldBody).toContain('rm -rf "$old_target"');
 
-    // cleanup_prefixed_claude_symlinks must also handle the new pattern
-    const cleanupPrefixedStart = setupContent.indexOf('cleanup_prefixed_claude_symlinks()');
-    const cleanupPrefixedEnd = setupContent.indexOf('}', setupContent.indexOf('cleaned up prefixed', cleanupPrefixedStart));
-    const cleanupPrefixedBody = setupContent.slice(cleanupPrefixedStart, cleanupPrefixedEnd);
-    expect(cleanupPrefixedBody).toContain('-d "$prefixed_target"');
-    expect(cleanupPrefixedBody).toContain('-L "$prefixed_target/SKILL.md"');
-    expect(cleanupPrefixedBody).toContain('rm -rf "$prefixed_target"');
+    // cleanup_prefixed_claude_symlinks was removed — skills are always prefixed now
   });
 
   // REGRESSION: link function must upgrade old directory symlinks
@@ -2185,11 +2179,10 @@ describe('setup script validation', () => {
 
   // --- Symlink prefix tests (PR #503) ---
 
-  test('link_claude_skill_dirs applies nstack- prefix by default', () => {
+  test('link_claude_skill_dirs always applies nstack- prefix', () => {
     const fnStart = setupContent.indexOf('link_claude_skill_dirs()');
     const fnEnd = setupContent.indexOf('}', setupContent.indexOf('linked[@]}', fnStart));
     const fnBody = setupContent.slice(fnStart, fnEnd);
-    expect(fnBody).toContain('SKILL_PREFIX');
     expect(fnBody).toContain('link_name="nstack-$skill_name"');
   });
 
@@ -2201,9 +2194,8 @@ describe('setup script validation', () => {
     expect(fnBody).toContain('nstack-*) link_name="$skill_name"');
   });
 
-  test('setup supports --no-prefix flag', () => {
+  test('setup accepts --no-prefix for backwards compat', () => {
     expect(setupContent).toContain('--no-prefix');
-    expect(setupContent).toContain('SKILL_PREFIX=0');
   });
 
   test('cleanup_old_claude_symlinks removes only nstack-pointing symlinks', () => {
@@ -2227,53 +2219,18 @@ describe('setup script validation', () => {
     expect(claudeInstallSection).toContain('cleanup_old_claude_symlinks');
   });
 
-  // --- Persistent config + interactive prompt tests ---
+  // --- Prefix is always on ---
 
-  test('setup reads skill_prefix from config', () => {
-    expect(setupContent).toContain('get skill_prefix');
-    expect(setupContent).toContain('NSTACK_CONFIG');
-  });
-
-  test('setup supports --prefix flag', () => {
+  test('setup accepts --prefix and --no-prefix flags for backwards compat', () => {
     expect(setupContent).toContain('--prefix)');
-    expect(setupContent).toContain('SKILL_PREFIX=1; SKILL_PREFIX_FLAG=1');
+    expect(setupContent).toContain('--no-prefix)');
   });
 
-  test('--prefix and --no-prefix persist to config', () => {
-    expect(setupContent).toContain('set skill_prefix');
+  test('skills are always prefixed (SKILL_PREFIX=1)', () => {
+    expect(setupContent).toContain('SKILL_PREFIX=1');
   });
 
-  test('interactive prompt shows when no config', () => {
-    expect(setupContent).toContain('Short names');
-    expect(setupContent).toContain('Namespaced');
-    expect(setupContent).toContain('Choice [1/2]');
-  });
-
-  test('non-TTY defaults to flat names', () => {
-    // Should check if stdin is a TTY before prompting
-    expect(setupContent).toContain('-t 0');
-  });
-
-  test('cleanup_prefixed_claude_symlinks exists and uses readlink', () => {
-    expect(setupContent).toContain('cleanup_prefixed_claude_symlinks');
-    const fnStart = setupContent.indexOf('cleanup_prefixed_claude_symlinks()');
-    const fnEnd = setupContent.indexOf('}', setupContent.indexOf('removed[@]}', fnStart));
-    const fnBody = setupContent.slice(fnStart, fnEnd);
-    expect(fnBody).toContain('readlink');
-    expect(fnBody).toContain('nstack-$skill_name');
-  });
-
-  test('reverse cleanup runs before link when prefix is disabled', () => {
-    const claudeInstallSection = setupContent.slice(
-      setupContent.indexOf('INSTALL_CLAUDE'),
-      setupContent.lastIndexOf('link_claude_skill_dirs')
-    );
-    expect(claudeInstallSection).toContain('cleanup_prefixed_claude_symlinks');
-  });
-
-  test('welcome message references SKILL_PREFIX', () => {
-    // nstack-upgrade is always called nstack-upgrade (it's the actual dir name)
-    // but the welcome section should exist near the prefix logic
+  test('welcome message references nstack-upgrade', () => {
     expect(setupContent).toContain('Run /nstack-upgrade anytime');
   });
 });
@@ -2627,52 +2584,6 @@ describe('CONFIDENCE_CALIBRATION resolver', () => {
     for (const skill of ['office-hours', 'retro']) {
       const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
       expect(content).not.toContain('## Confidence Calibration');
-    }
-  });
-});
-
-describe('gen-skill-docs prefix warning (#620/#578)', () => {
-  const { execSync } = require('child_process');
-
-  test('warns about skill_prefix when config has prefix=true', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nstack-prefix-warn-'));
-    try {
-      // Create a fake ~/.nstack/config.yaml with skill_prefix: true
-      const fakeHome = tmpDir;
-      const fakeGstack = path.join(fakeHome, '.nstack');
-      fs.mkdirSync(fakeGstack, { recursive: true });
-      fs.writeFileSync(path.join(fakeGstack, 'config.yaml'), 'skill_prefix: true\n');
-
-      const output = execSync('bun run scripts/gen-skill-docs.ts', {
-        cwd: ROOT,
-        env: { ...process.env, HOME: fakeHome },
-        encoding: 'utf-8',
-        timeout: 30000,
-      });
-      expect(output).toContain('skill_prefix is true');
-      expect(output).toContain('nstack-relink');
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
-
-  test('no warning when skill_prefix is false or absent', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nstack-prefix-warn-'));
-    try {
-      const fakeHome = tmpDir;
-      const fakeGstack = path.join(fakeHome, '.nstack');
-      fs.mkdirSync(fakeGstack, { recursive: true });
-      fs.writeFileSync(path.join(fakeGstack, 'config.yaml'), 'skill_prefix: false\n');
-
-      const output = execSync('bun run scripts/gen-skill-docs.ts', {
-        cwd: ROOT,
-        env: { ...process.env, HOME: fakeHome },
-        encoding: 'utf-8',
-        timeout: 30000,
-      });
-      expect(output).not.toContain('skill_prefix is true');
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 });

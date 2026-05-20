@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# nstack-project-dir — resolve project data directory
+#
+# Usage: source "$(dirname "$0")/nstack-project-dir"
+#   Sets: _NSTACK_PROJ  — path to .nstack/ in repo root (or legacy/env fallback)
+#
+# Resolution order:
+#   1. NSTACK_HOME env var (for testing and backward compat)
+#   2. .nstack/ in git repo root (local-first, primary path)
+#   3. Empty (caller should handle — error or skip)
+#
+# Env overrides:
+#   NSTACK_HOME — override project data directory (e.g., for tests)
+#
+# This file is sourced (not executed) — no set -euo pipefail, no shebang execution.
+
+if [ -n "${NSTACK_HOME:-}" ]; then
+  # Env override — used by tests and backward-compat callers
+  _NSTACK_PROJ="$NSTACK_HOME"
+else
+  _NSTACK_PROJ_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  if [ -n "$_NSTACK_PROJ_ROOT" ]; then
+    _NSTACK_PROJ="$_NSTACK_PROJ_ROOT/.nstack"
+  else
+    _NSTACK_PROJ=""
+  fi
+  unset _NSTACK_PROJ_ROOT
+fi

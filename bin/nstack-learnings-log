@@ -1,69 +1,136 @@
 #!/usr/bin/env bash
-# nstack-learnings-log — append a learning to the project learnings file
+# nstack-learnings-log — append a learning to the project learnings file.
+#
 # Usage: nstack-learnings-log '{"skill":"review","type":"pitfall","key":"n-plus-one","insight":"...","confidence":8,"source":"observed"}'
+#
+# Always writes to .nstack/learnings.jsonl (the local working state).
+# Also writes to ~/.nstack/learnings.jsonl (durable archive across repo deletion)
+# when:
+#   - cross_project_learnings=true in local config (opt-in, default false)
+#   - $HOME/.nstack/ is writable
+# Otherwise the global write is silently skipped (project-scoped agents) with a
+# stderr warning if the global path exists but isn't writable.
 #
 # Append-only storage. Duplicates (same key+type) are resolved at read time
 # by nstack-learnings-search ("latest winner" per key+type).
 #
-# Validation threat model: protect the JSONL file from being corrupted by
-# malformed input. We check the *shape* of the input (must be a one-line
-# {...} object with no embedded control chars), not full JSON validity.
-# Readers (`nstack-learnings-search` etc.) handle parse errors gracefully,
-# so bad-but-shaped input is acceptable. If `jq` is on PATH we use it as a
-# stricter check on top, but it is not required.
+# Size limits enforced (defense against output-injection blast):
+#   - insight ≤ 4096 bytes
+#   - files array ≤ 16 entries
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
-_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-NSTACK_HOME="${NSTACK_HOME:-${_ROOT:+$_ROOT/.nstack}}"
-NSTACK_HOME="${NSTACK_HOME:-$HOME/.nstack}"
-mkdir -p "$NSTACK_HOME/projects/$SLUG"
+REPO_TOOLS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCK_HELPER="$REPO_TOOLS_ROOT/scripts/internal/lock.sh"
 
-VALIDATE_FAIL_REASON=
-_validate_json_shape() {
-  local raw="$1"
-  local trimmed="${raw#"${raw%%[![:space:]]*}"}"
-  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-  if [[ -z "$trimmed" ]]; then VALIDATE_FAIL_REASON=empty; return 1; fi
-  if [[ "${trimmed:0:1}" != "{" || "${trimmed: -1}" != "}" ]]; then
-    VALIDATE_FAIL_REASON=shape; return 1
-  fi
-  if [[ "$raw" == *$'\n'* || "$raw" == *$'\r'* ]]; then
-    VALIDATE_FAIL_REASON=control; return 1
-  fi
-  if [[ "$raw" =~ [[:cntrl:]] ]]; then
-    VALIDATE_FAIL_REASON=control; return 1
-  fi
-  if command -v jq >/dev/null 2>&1; then
-    if ! printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
-      VALIDATE_FAIL_REASON=jq; return 1
-    fi
-  fi
-  VALIDATE_FAIL_REASON=
-  return 0
-}
-
-INPUT="$1"
-if ! _validate_json_shape "$INPUT"; then
-  echo "nstack-learnings-log: input failed shape check ($VALIDATE_FAIL_REASON), skipping" >&2
+source "$SCRIPT_DIR/nstack-project-dir"
+if [ -z "$_NSTACK_PROJ" ]; then
+  echo "nstack-learnings-log: not in a git repository" >&2
   exit 1
 fi
+mkdir -p "$_NSTACK_PROJ"
 
-# Inject `ts` if not present as a top-level key. Match `"ts":` anywhere
-# in the input — not anchored to position 1 — so that callers who put
-# `ts` later in the object don't get a duplicate `ts` prepended.
-# False-positive risk (`ts` appearing inside a string value) means we
-# skip injection when we shouldn't; that's strictly safer than producing
-# duplicate keys.
-if [[ ! "$INPUT" =~ \"ts\"[[:space:]]*: ]]; then
-  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  inp="${INPUT#"${INPUT%%[![:space:]]*}"}"
-  inp="${inp%"${inp##*[![:space:]]}"}"
-  if [[ "$inp" =~ ^\{[[:space:]]*\}$ ]]; then
-    INPUT="{\"ts\":\"$ts\"}"
-  else
-    INPUT="{\"ts\":\"$ts\",${inp#\{}"
-  fi
+if [ -f "$LOCK_HELPER" ]; then
+  # shellcheck disable=SC1090
+  source "$LOCK_HELPER"
+else
+  nstack_with_lock() { local _lf="$1" _to="$2"; shift 2; "$@"; }
 fi
 
-echo "$INPUT" >> "$NSTACK_HOME/projects/$SLUG/learnings.jsonl"
+INPUT="$1"
+
+# Resolve bun (subprocess shells may not have it on PATH)
+BUN_BIN="$(command -v bun 2>/dev/null || true)"
+[ -z "$BUN_BIN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN_BIN="$HOME/.bun/bin/bun"
+
+if [ -z "$BUN_BIN" ]; then
+  # No bun available — best-effort syntactic check.
+  case "$INPUT" in
+    \{*\}) ;;
+    *) echo "nstack-learnings-log: input must be a JSON object (no bun for full validation)" >&2; exit 1 ;;
+  esac
+  # Inject ts unless it appears anywhere in the input (false-positive risk =
+  # skip injection when we shouldn't, which is safer than producing duplicate keys).
+  if [[ ! "$INPUT" =~ \"ts\"[[:space:]]*: ]]; then
+    ts_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # Trim whitespace, then handle empty-object case specially so we never
+    # emit `{,"ts":"..."}` (malformed JSON).
+    _trim="${INPUT#"${INPUT%%[![:space:]]*}"}"
+    _trim="${_trim%"${_trim##*[![:space:]]}"}"
+    if [[ "$_trim" =~ ^\{[[:space:]]*\}$ ]]; then
+      INPUT="{\"ts\":\"$ts_now\"}"
+    else
+      INPUT="{\"ts\":\"$ts_now\",${_trim#\{}"
+    fi
+  fi
+else
+  # Validate: input must be parseable JSON
+  if ! printf '%s' "$INPUT" | "$BUN_BIN" -e "JSON.parse(await Bun.stdin.text())" 2>/dev/null; then
+    echo "nstack-learnings-log: invalid JSON, skipping" >&2
+    exit 1
+  fi
+
+  # Inject timestamp if not present
+  if ! printf '%s' "$INPUT" | "$BUN_BIN" -e "const j=JSON.parse(await Bun.stdin.text()); if(!j.ts) process.exit(1)" 2>/dev/null; then
+    INPUT=$(printf '%s' "$INPUT" | "$BUN_BIN" -e "
+      const j = JSON.parse(await Bun.stdin.text());
+      j.ts = new Date().toISOString();
+      console.log(JSON.stringify(j));
+    " 2>/dev/null) || true
+  fi
+
+  # Enforce size limits (reject early; better than silent corruption later)
+  CHECKED=$(printf '%s' "$INPUT" | "$BUN_BIN" -e "
+    const j = JSON.parse(await Bun.stdin.text());
+    if (typeof j.insight === 'string' && j.insight.length > 4096) {
+      console.error('nstack-learnings-log: insight exceeds 4096 bytes, rejecting');
+      process.exit(1);
+    }
+    if (Array.isArray(j.files) && j.files.length > 16) {
+      console.error('nstack-learnings-log: files array exceeds 16 entries, rejecting');
+      process.exit(1);
+    }
+    console.log(JSON.stringify(j));
+  ") || { echo "nstack-learnings-log: size validation failed" >&2; exit 1; }
+  INPUT="$CHECKED"
+fi
+
+# Always: write to local (lock-protected against concurrent worktree writes).
+# `printf '%s\n'` instead of `echo` so JSON content with backslash escapes is preserved
+# verbatim (some shells interpret echo backslash sequences).
+LOCAL_FILE="$_NSTACK_PROJ/learnings.jsonl"
+LOCAL_LOCK="$_NSTACK_PROJ/.learnings.lock"
+nstack_with_lock "$LOCAL_LOCK" 5 bash -c 'printf "%s\n" "$1" >> "$2"' _ "$INPUT" "$LOCAL_FILE" || {
+  echo "nstack-learnings-log: local write failed (lock timeout)" >&2
+  exit 1
+}
+
+# Conditionally: dual-write to the durable global archive.
+OPTIN=$("$SCRIPT_DIR/nstack-config" get cross_project_learnings 2>/dev/null || echo "")
+if [ "$OPTIN" = "true" ]; then
+  GLOBAL_DIR="${NSTACK_STATE_DIR:-$HOME/.nstack}"
+  GLOBAL_FILE="$GLOBAL_DIR/learnings.jsonl"
+  GLOBAL_LOCK="$GLOBAL_DIR/.learnings.lock"
+  if mkdir -p "$GLOBAL_DIR" 2>/dev/null && [ -w "$GLOBAL_DIR" ]; then
+    if [ -n "$BUN_BIN" ]; then
+      eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
+      REPO_REAL=""
+      if command -v realpath >/dev/null 2>&1; then
+        REPO_REAL=$(realpath "$_NSTACK_PROJ/.." 2>/dev/null || true)
+      fi
+      [ -z "$REPO_REAL" ] && REPO_REAL=$(cd "$_NSTACK_PROJ/.." && pwd -P)
+      ENRICHED_INPUT=$(printf '%s' "$INPUT" | NSTACK_SLUG="${SLUG:-}" NSTACK_REPO_PATH="$REPO_REAL" "$BUN_BIN" -e "
+        const j = JSON.parse(await Bun.stdin.text());
+        j.project = process.env.NSTACK_SLUG || j.project || '';
+        j.repo_path = process.env.NSTACK_REPO_PATH || j.repo_path || '';
+        console.log(JSON.stringify(j));
+      " 2>/dev/null) || ENRICHED_INPUT="$INPUT"
+    else
+      ENRICHED_INPUT="$INPUT"
+    fi
+    nstack_with_lock "$GLOBAL_LOCK" 5 bash -c 'printf "%s\n" "$1" >> "$2"' _ "$ENRICHED_INPUT" "$GLOBAL_FILE" || {
+      echo "nstack-learnings-log: global archive write failed (lock timeout); saved locally only" >&2
+    }
+  else
+    echo "nstack-learnings-log: \$HOME/.nstack not writable; saved locally only" >&2
+  fi
+fi

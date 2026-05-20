@@ -435,7 +435,7 @@ You know the feeling. You have a feature, a page, a landing screen... and you're
 3. It generates 3 distinct design variants as PNGs
 4. A comparison board opens in your browser with all 3 side-by-side
 5. You click "Approve" on the one you like, or give feedback for another round
-6. The approved variant saves to `~/.nstack/projects/$SLUG/designs/` with an `approved.json`
+6. The approved variant saves to `.nstack/designs/` (in your repo) with an `approved.json`
 
 That `approved.json` is one way to feed `/design-html`. The design pipeline chains: shotgun picks the direction, design-html renders it as working code. But `/design-html` also works with CEO plans, design reviews, or just a description.
 
@@ -946,7 +946,7 @@ Claude: Plan complete. 9 decisions auto-resolved, 2 taste decisions approved.
 
 This is my **institutional memory mode**.
 
-nstack learns from every session. Patterns, pitfalls, preferences, architectural decisions... they accumulate in `~/.nstack/projects/$SLUG/learnings.jsonl`. Each learning has a confidence score, source attribution, and the files it references.
+nstack learns from every session. Patterns, pitfalls, preferences, architectural decisions... they accumulate in `.nstack/learnings.jsonl` (per-repo). Opt in to cross-project sharing (`nstack-config set --local cross_project_learnings true`) and they also dual-write to `~/.nstack/learnings.jsonl` for durability across repo deletion. Each learning has a confidence score, source attribution, and the files it references.
 
 `/learn` lets you see what nstack has absorbed, search for specific patterns, prune stale entries (when referenced files no longer exist), and export learnings for team sharing. The real magic is in other skills... they automatically search learnings before making recommendations, and display "Prior learning applied" when a past insight is relevant.
 

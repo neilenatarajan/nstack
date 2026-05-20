@@ -68,7 +68,21 @@ if (evalsEnabled && process.env.EVALS_TIER) {
   process.stderr.write(`EVALS_TIER=${tier}: ${selectedTests.length} tests\n\n`);
 }
 
-export const describeE2E = evalsEnabled ? describe : describe.skip;
+// Check if Anthropic API key is available. Every E2E test below spawns
+// `claude -p`, so without a key all of them would print "Not logged in" and
+// the assertions would fail. Gate E2E here so CI on forks without the secret
+// (or local dev runs without an `ANTHROPIC_API_KEY` exported) skips cleanly
+// rather than producing a wall of red.
+export const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+
+if (evalsEnabled && !hasApiKey) {
+  process.stderr.write(
+    'EVALS=1 set but ANTHROPIC_API_KEY is empty — E2E tests will be skipped.\n' +
+    'Configure ANTHROPIC_API_KEY in CI secrets or export it locally to run them.\n\n'
+  );
+}
+
+export const describeE2E = (evalsEnabled && hasApiKey) ? describe : describe.skip;
 
 /** Wrap a describe block to skip entirely if none of its tests are selected. */
 export function describeIfSelected(name: string, testNames: string[], fn: () => void) {
@@ -80,9 +94,6 @@ export function describeIfSelected(name: string, testNames: string[], fn: () => 
 export const runId = new Date().toISOString().replace(/[:.]/g, '').replace('T', '-').slice(0, 15);
 
 export const browseBin = path.resolve(ROOT, 'browse', 'dist', 'browse');
-
-// Check if Anthropic API key is available (needed for outcome evals)
-export const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
 
 /**
  * Copy a directory tree recursively (files only, follows structure).

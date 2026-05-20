@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
-# nstack-config — read/write ~/.nstack/config.yaml
+# nstack-config — read/write layered config (local > global)
 #
 # Usage:
-#   nstack-config get <key>          — read a config value
-#   nstack-config set <key> <value>  — write a config value
-#   nstack-config list               — show all config
+#   nstack-config get <key>                — read (local .nstack/config.yaml > global ~/.nstack/config.yaml)
+#   nstack-config set <key> <value>        — write to local if in git repo, global otherwise
+#   nstack-config set --local <key> <value>  — write to .nstack/config.yaml in repo root
+#   nstack-config set --global <key> <value> — write to ~/.nstack/config.yaml
+#   nstack-config list                     — show all config (merged view)
 #
 # Env overrides (for testing):
 #   NSTACK_STATE_DIR  — override ~/.nstack state directory
 set -euo pipefail
 
-STATE_DIR="${NSTACK_STATE_DIR:-$HOME/.nstack}"
-CONFIG_FILE="$STATE_DIR/config.yaml"
+GLOBAL_DIR="${NSTACK_STATE_DIR:-$HOME/.nstack}"
+GLOBAL_FILE="$GLOBAL_DIR/config.yaml"
+
+# Resolve local config: .nstack/config.yaml in git repo root
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+LOCAL_FILE=""
+[ -n "$_ROOT" ] && LOCAL_FILE="$_ROOT/.nstack/config.yaml"
 
 # Annotated header for new config files. Written once on first `set`.
 CONFIG_HEADER='# nstack configuration — edit freely, changes take effect on next skill run.
@@ -24,19 +31,9 @@ CONFIG_HEADER='# nstack configuration — edit freely, changes take effect on ne
 # routing_declined: false   # Set to true to skip the CLAUDE.md routing injection
 #                           # prompt. Set back to false to be asked again.
 #
-# ─── Telemetry ───────────────────────────────────────────────────────
-# telemetry: anonymous      # off | anonymous | community
-#                           #   off       — no data sent, no local analytics
-#                           #   anonymous — counter only, no device ID
-#                           #   community — usage data + stable device ID
-#
 # ─── Updates ─────────────────────────────────────────────────────────
 # auto_upgrade: false       # true = silently upgrade on session start
 # update_check: true        # false = suppress version check notifications
-#
-# ─── Skill naming ────────────────────────────────────────────────────
-# skill_prefix: false       # true = namespace skills as /nstack-qa, /nstack-ship
-#                           # false = short names /qa, /ship
 #
 # ─── Advanced ────────────────────────────────────────────────────────
 # codex_reviews: enabled    # disabled = skip Codex adversarial reviews in /ship
@@ -44,6 +41,39 @@ CONFIG_HEADER='# nstack configuration — edit freely, changes take effect on ne
 # skip_eng_review: false    # true = skip eng review gate in /ship (not recommended)
 #
 '
+
+# Read a value from a config file (empty string if not found)
+_read_key() {
+  local file="$1" key="$2"
+  grep -E "^${key}:" "$file" 2>/dev/null | tail -1 | awk '{print $2}' | tr -d '[:space:]' || true
+}
+
+# Write a key-value pair to a config file
+_write_key() {
+  local file="$1" key="$2" value="$3" dir
+  dir="$(dirname "$file")"
+  mkdir -p "$dir"
+  # Write annotated header on first creation
+  if [ ! -f "$file" ]; then
+    printf '%s' "$CONFIG_HEADER" > "$file"
+  fi
+  # Auto-add .nstack/ to .gitignore if writing local config
+  if [ -n "$_ROOT" ] && [ "$dir" = "$_ROOT/.nstack" ]; then
+    if [ -f "$_ROOT/.gitignore" ]; then
+      grep -qxF '.nstack/' "$_ROOT/.gitignore" 2>/dev/null || echo '.nstack/' >> "$_ROOT/.gitignore"
+    fi
+  fi
+  # Escape sed special chars in value and drop embedded newlines
+  local esc_value
+  esc_value="$(printf '%s' "$value" | head -1 | sed 's/[&/\]/\\&/g')"
+  if grep -qE "^${key}:" "$file" 2>/dev/null; then
+    local tmpfile
+    tmpfile="$(mktemp "${file}.XXXXXX")"
+    sed "/^${key}:/s/.*/${key}: ${esc_value}/" "$file" > "$tmpfile" && mv "$tmpfile" "$file"
+  else
+    echo "${key}: ${value}" >> "$file"
+  fi
+}
 
 case "${1:-}" in
   get)
@@ -53,41 +83,77 @@ case "${1:-}" in
       echo "Error: key must contain only alphanumeric characters and underscores" >&2
       exit 1
     fi
-    grep -E "^${KEY}:" "$CONFIG_FILE" 2>/dev/null | tail -1 | awk '{print $2}' | tr -d '[:space:]' || true
+    # Local > global resolution
+    VAL=""
+    [ -n "$LOCAL_FILE" ] && VAL=$(_read_key "$LOCAL_FILE" "$KEY")
+    [ -z "$VAL" ] && VAL=$(_read_key "$GLOBAL_FILE" "$KEY")
+    echo "$VAL"
     ;;
   set)
-    KEY="${2:?Usage: nstack-config set <key> <value>}"
-    VALUE="${3:?Usage: nstack-config set <key> <value>}"
-    # Validate key (alphanumeric + underscore only)
+    # Parse flags: --local, --global
+    SCOPE=""
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --local)  SCOPE="local"; shift ;;
+        --global) SCOPE="global"; shift ;;
+        -*) echo "Unknown flag: $1" >&2; exit 1 ;;
+        *)  break ;;
+      esac
+    done
+    KEY="${1:?Usage: nstack-config set [--local|--global] <key> <value>}"
+    VALUE="${2:?Usage: nstack-config set [--local|--global] <key> <value>}"
+    # Validate key
     if ! printf '%s' "$KEY" | grep -qE '^[a-zA-Z0-9_]+$'; then
       echo "Error: key must contain only alphanumeric characters and underscores" >&2
       exit 1
     fi
-    mkdir -p "$STATE_DIR"
-    # Write annotated header on first creation
-    if [ ! -f "$CONFIG_FILE" ]; then
-      printf '%s' "$CONFIG_HEADER" > "$CONFIG_FILE"
-    fi
-    # Escape sed special chars in value and drop embedded newlines
-    ESC_VALUE="$(printf '%s' "$VALUE" | head -1 | sed 's/[&/\]/\\&/g')"
-    if grep -qE "^${KEY}:" "$CONFIG_FILE" 2>/dev/null; then
-      # Portable in-place edit (BSD sed uses -i '', GNU sed uses -i without arg)
-      _tmpfile="$(mktemp "${CONFIG_FILE}.XXXXXX")"
-      sed "/^${KEY}:/s/.*/${KEY}: ${ESC_VALUE}/" "$CONFIG_FILE" > "$_tmpfile" && mv "$_tmpfile" "$CONFIG_FILE"
+    # Determine target file
+    TARGET=""
+    if [ "$SCOPE" = "global" ]; then
+      TARGET="$GLOBAL_FILE"
+    elif [ "$SCOPE" = "local" ]; then
+      if [ -z "$LOCAL_FILE" ]; then
+        echo "Warning: not in a git repo, writing to global config instead." >&2
+        TARGET="$GLOBAL_FILE"
+      else
+        TARGET="$LOCAL_FILE"
+      fi
     else
-      echo "${KEY}: ${VALUE}" >> "$CONFIG_FILE"
+      # Default: local if in git repo, global otherwise
+      if [ -n "$LOCAL_FILE" ]; then
+        TARGET="$LOCAL_FILE"
+      else
+        TARGET="$GLOBAL_FILE"
+      fi
     fi
-    # Auto-relink skills when prefix setting changes (skip during setup to avoid recursive call)
-    if [ "$KEY" = "skill_prefix" ] && [ -z "${NSTACK_SETUP_RUNNING:-}" ]; then
-      NSTACK_RELINK="$(dirname "$0")/nstack-relink"
-      [ -x "$NSTACK_RELINK" ] && "$NSTACK_RELINK" || true
+    _write_key "$TARGET" "$KEY" "$VALUE"
+
+    # Opt-out cascade: when cross_project_learnings flips to false locally,
+    # auto-remove this repo from the global registry. Privacy boundary should
+    # be enforced by the config change, not require a separate manual step.
+    if [ "$KEY" = "cross_project_learnings" ] && [ "$VALUE" = "false" ] && [ -n "$_ROOT" ]; then
+      SCRIPT_DIR_LOCAL="$(cd "$(dirname "$0")" && pwd)"
+      if [ -x "$SCRIPT_DIR_LOCAL/nstack-registry" ]; then
+        "$SCRIPT_DIR_LOCAL/nstack-registry" remove --local 2>/dev/null && \
+          echo "Removed this project from cross-project registry. Existing global archive entries preserved." >&2 || true
+      fi
     fi
     ;;
   list)
-    cat "$CONFIG_FILE" 2>/dev/null || true
+    # Show merged view: global first, then local overrides
+    if [ -f "$GLOBAL_FILE" ]; then
+      echo "# global: $GLOBAL_FILE"
+      cat "$GLOBAL_FILE"
+    fi
+    if [ -n "$LOCAL_FILE" ] && [ -f "$LOCAL_FILE" ]; then
+      echo ""
+      echo "# local: $LOCAL_FILE"
+      cat "$LOCAL_FILE"
+    fi
     ;;
   *)
-    echo "Usage: nstack-config {get|set|list} [key] [value]"
+    echo "Usage: nstack-config {get|set|list} [--local|--global] [key] [value]"
     exit 1
     ;;
 esac

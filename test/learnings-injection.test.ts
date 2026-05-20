@@ -9,7 +9,10 @@ describe("nstack-learnings-search injection prevention", () => {
 
   test("no shell interpolation inside bun -e string", () => {
     // Extract the bun -e block (everything between `bun -e "` and the closing `"`)
-    const bunBlock = script.slice(script.indexOf('bun -e "'));
+    // Match either `bun -e "...` or `"$BUN_BIN" -e "...` (BUN_BIN is the
+    // resolved path to bun when not on PATH).
+    const idx = script.search(/(bun|BUN_BIN")\s+-e\s+"/);
+    const bunBlock = script.slice(idx);
 
     // Should NOT contain ${VAR} patterns (shell interpolation)
     // These are RCE vectors: a malicious learnings entry with '; rm -rf / ;' in the
@@ -27,7 +30,10 @@ describe("nstack-learnings-search injection prevention", () => {
   });
 
   test("uses process.env for all user-controlled values", () => {
-    const bunBlock = script.slice(script.indexOf('bun -e "'));
+    // Match either `bun -e "...` or `"$BUN_BIN" -e "...` (BUN_BIN is the
+    // resolved path to bun when not on PATH).
+    const idx = script.search(/(bun|BUN_BIN")\s+-e\s+"/);
+    const bunBlock = script.slice(idx);
 
     // Must use process.env for TYPE, QUERY, LIMIT, SLUG, CROSS_PROJECT
     expect(bunBlock).toContain("process.env.NSTACK_SEARCH_TYPE");

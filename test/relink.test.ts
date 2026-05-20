@@ -65,59 +65,26 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe('nstack-relink (#578)', () => {
-  // Test 11: prefixed symlinks when skill_prefix=true
-  test('creates nstack-* symlinks when skill_prefix=true', () => {
+describe('nstack-relink (always prefixed)', () => {
+  test('creates nstack-* prefixed entries for all skills', () => {
     setupMockInstall(['qa', 'ship', 'review']);
-    // Set config to prefix mode (pass install/skills env so auto-relink uses mock install)
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    // Run relink with env pointing to the mock install
     const output = run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
     });
-    // Verify nstack-* symlinks exist
     expect(fs.existsSync(path.join(skillsDir, 'nstack-qa'))).toBe(true);
     expect(fs.existsSync(path.join(skillsDir, 'nstack-ship'))).toBe(true);
     expect(fs.existsSync(path.join(skillsDir, 'nstack-review'))).toBe(true);
     expect(output).toContain('nstack-');
   });
 
-  // Test 12: flat symlinks when skill_prefix=false
-  test('creates flat symlinks when skill_prefix=false', () => {
-    setupMockInstall(['qa', 'ship', 'review']);
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    const output = run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    expect(fs.existsSync(path.join(skillsDir, 'qa'))).toBe(true);
-    expect(fs.existsSync(path.join(skillsDir, 'ship'))).toBe(true);
-    expect(fs.existsSync(path.join(skillsDir, 'review'))).toBe(true);
-    expect(output).toContain('flat');
-  });
-
-  // REGRESSION: unprefixed skills must be real directories, not symlinks (#761)
-  // Claude Code auto-prefixes skills nested under a parent dir symlink.
-  // e.g., `qa -> nstack/qa` gets discovered as "nstack-qa", not "qa".
-  // The fix: create real directories with SKILL.md symlinks inside.
-  test('unprefixed skills are real directories with SKILL.md symlinks, not dir symlinks', () => {
+  test('skills are real directories with SKILL.md symlinks, not dir symlinks', () => {
     setupMockInstall(['qa', 'ship', 'review', 'plan-ceo-review']);
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
     run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
     });
-    for (const skill of ['qa', 'ship', 'review', 'plan-ceo-review']) {
+    for (const skill of ['nstack-qa', 'nstack-ship', 'nstack-review', 'nstack-plan-ceo-review']) {
       const skillPath = path.join(skillsDir, skill);
       const skillMdPath = path.join(skillPath, 'SKILL.md');
       // Must be a real directory, NOT a symlink
@@ -128,32 +95,10 @@ describe('nstack-relink (#578)', () => {
       expect(fs.lstatSync(skillMdPath).isSymbolicLink()).toBe(true);
       // The SKILL.md symlink must point to the source skill's SKILL.md
       const target = fs.readlinkSync(skillMdPath);
-      expect(target).toContain(skill);
       expect(target).toEndWith('/SKILL.md');
     }
   });
 
-  // Same invariant for prefixed mode
-  test('prefixed skills are real directories with SKILL.md symlinks, not dir symlinks', () => {
-    setupMockInstall(['qa', 'ship']);
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    for (const skill of ['nstack-qa', 'nstack-ship']) {
-      const skillPath = path.join(skillsDir, skill);
-      const skillMdPath = path.join(skillPath, 'SKILL.md');
-      expect(fs.lstatSync(skillPath).isDirectory()).toBe(true);
-      expect(fs.lstatSync(skillPath).isSymbolicLink()).toBe(false);
-      expect(fs.lstatSync(skillMdPath).isSymbolicLink()).toBe(true);
-    }
-  });
-
-  // Upgrade: old directory symlinks get replaced with real directories
   test('upgrades old directory symlinks to real directories', () => {
     setupMockInstall(['qa', 'ship']);
     // Simulate old behavior: create directory symlinks (the old pattern)
@@ -162,186 +107,45 @@ describe('nstack-relink (#578)', () => {
     // Verify they start as symlinks
     expect(fs.lstatSync(path.join(skillsDir, 'qa')).isSymbolicLink()).toBe(true);
 
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
     run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
     });
 
-    // After relink: must be real directories, not symlinks
-    expect(fs.lstatSync(path.join(skillsDir, 'qa')).isSymbolicLink()).toBe(false);
-    expect(fs.lstatSync(path.join(skillsDir, 'qa')).isDirectory()).toBe(true);
-    expect(fs.lstatSync(path.join(skillsDir, 'qa', 'SKILL.md')).isSymbolicLink()).toBe(true);
+    // After relink: old flat entries cleaned up, nstack-* entries are real dirs
+    expect(fs.existsSync(path.join(skillsDir, 'qa'))).toBe(false);
+    expect(fs.existsSync(path.join(skillsDir, 'ship'))).toBe(false);
+    expect(fs.lstatSync(path.join(skillsDir, 'nstack-qa')).isDirectory()).toBe(true);
+    expect(fs.lstatSync(path.join(skillsDir, 'nstack-qa')).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(path.join(skillsDir, 'nstack-qa', 'SKILL.md')).isSymbolicLink()).toBe(true);
   });
 
-  // FIRST INSTALL: --no-prefix must create ONLY flat names, zero nstack-* pollution
-  test('first install --no-prefix: only flat names exist, zero nstack-* entries', () => {
-    setupMockInstall(['qa', 'ship', 'review', 'plan-ceo-review', 'nstack-upgrade']);
-    // Simulate first install: no saved config, pass --no-prefix equivalent
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    // Enumerate everything in skills dir
-    const entries = fs.readdirSync(skillsDir);
-    // Expected: qa, ship, review, plan-ceo-review, nstack-upgrade (its real name)
-    expect(entries.sort()).toEqual(['nstack-upgrade', 'plan-ceo-review', 'qa', 'review', 'ship']);
-    // No nstack-qa, nstack-ship, nstack-review, nstack-plan-ceo-review
-    const leaked = entries.filter(e => e.startsWith('nstack-') && e !== 'nstack-upgrade');
-    expect(leaked).toEqual([]);
-  });
-
-  // FIRST INSTALL: --prefix must create ONLY nstack-* names, zero flat-name pollution
-  test('first install --prefix: only nstack-* entries exist, zero flat names', () => {
-    setupMockInstall(['qa', 'ship', 'review', 'plan-ceo-review', 'nstack-upgrade']);
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    const entries = fs.readdirSync(skillsDir);
-    // Expected: nstack-qa, nstack-ship, nstack-review, nstack-plan-ceo-review, nstack-upgrade
-    expect(entries.sort()).toEqual([
-      'nstack-plan-ceo-review', 'nstack-qa', 'nstack-review', 'nstack-ship', 'nstack-upgrade',
-    ]);
-    // No unprefixed qa, ship, review, plan-ceo-review
-    const leaked = entries.filter(e => !e.startsWith('nstack-'));
-    expect(leaked).toEqual([]);
-  });
-
-  // FIRST INSTALL: non-TTY (no saved config, piped stdin) defaults to flat names
-  test('non-TTY first install defaults to flat names via relink', () => {
-    setupMockInstall(['qa', 'ship']);
-    // Don't set any config — simulate fresh install
-    // nstack-relink reads config; on fresh install config returns empty → defaults to false
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    const entries = fs.readdirSync(skillsDir);
-    // Should be flat names (relink defaults to false when config returns empty)
-    expect(entries.sort()).toEqual(['qa', 'ship']);
-  });
-
-  // SWITCH: prefix → no-prefix must clean up ALL nstack-* entries
-  test('switching prefix to no-prefix removes all nstack-* entries completely', () => {
-    setupMockInstall(['qa', 'ship', 'review', 'plan-ceo-review', 'nstack-upgrade']);
-    // Start in prefix mode
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    let entries = fs.readdirSync(skillsDir);
-    expect(entries.filter(e => !e.startsWith('nstack-'))).toEqual([]);
-
-    // Switch to no-prefix
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    entries = fs.readdirSync(skillsDir);
-    // Only flat names + nstack-upgrade (its real name)
-    expect(entries.sort()).toEqual(['nstack-upgrade', 'plan-ceo-review', 'qa', 'review', 'ship']);
-    const leaked = entries.filter(e => e.startsWith('nstack-') && e !== 'nstack-upgrade');
-    expect(leaked).toEqual([]);
-  });
-
-  // SWITCH: no-prefix → prefix must clean up ALL flat entries
-  test('switching no-prefix to prefix removes all flat entries completely', () => {
-    setupMockInstall(['qa', 'ship', 'review', 'nstack-upgrade']);
-    // Start in no-prefix mode
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    let entries = fs.readdirSync(skillsDir);
-    expect(entries.filter(e => e.startsWith('nstack-') && e !== 'nstack-upgrade')).toEqual([]);
-
-    // Switch to prefix
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    entries = fs.readdirSync(skillsDir);
-    // Only nstack-* names
-    expect(entries.sort()).toEqual([
-      'nstack-qa', 'nstack-review', 'nstack-ship', 'nstack-upgrade',
-    ]);
-    const leaked = entries.filter(e => !e.startsWith('nstack-'));
-    expect(leaked).toEqual([]);
-  });
-
-  // Test 13: cleans stale symlinks from opposite mode
-  test('cleans up stale symlinks from opposite mode', () => {
-    setupMockInstall(['qa', 'ship']);
-    // Create prefixed symlinks first
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    expect(fs.existsSync(path.join(skillsDir, 'nstack-qa'))).toBe(true);
-
-    // Switch to flat mode
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-
-    // Flat symlinks should exist, prefixed should be gone
+  test('cleans up old flat (unprefixed) entries on relink', () => {
+    setupMockInstall(['qa', 'ship', 'review']);
+    // Simulate old flat entries (pre-always-prefix era)
+    for (const skill of ['qa', 'ship', 'review']) {
+      const dir = path.join(skillsDir, skill);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.symlinkSync(path.join(installDir, skill, 'SKILL.md'), path.join(dir, 'SKILL.md'));
+    }
     expect(fs.existsSync(path.join(skillsDir, 'qa'))).toBe(true);
-    expect(fs.existsSync(path.join(skillsDir, 'nstack-qa'))).toBe(false);
+
+    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
+      NSTACK_INSTALL_DIR: installDir,
+      NSTACK_SKILLS_DIR: skillsDir,
+    });
+
+    // Old flat entries removed, nstack-* entries created
+    expect(fs.existsSync(path.join(skillsDir, 'qa'))).toBe(false);
+    expect(fs.existsSync(path.join(skillsDir, 'ship'))).toBe(false);
+    expect(fs.existsSync(path.join(skillsDir, 'review'))).toBe(false);
+    expect(fs.existsSync(path.join(skillsDir, 'nstack-qa'))).toBe(true);
+    expect(fs.existsSync(path.join(skillsDir, 'nstack-ship'))).toBe(true);
+    expect(fs.existsSync(path.join(skillsDir, 'nstack-review'))).toBe(true);
   });
 
-  // Test 14: error when install dir missing
-  test('prints error when install dir missing', () => {
-    const output = run(`${BIN}/nstack-relink`, {
-      NSTACK_INSTALL_DIR: '/nonexistent/path/nstack',
-      NSTACK_SKILLS_DIR: '/nonexistent/path/skills',
-    }, true);
-    expect(output).toContain('setup');
-  });
-
-  // Test: nstack-upgrade does NOT get double-prefixed
   test('does not double-prefix nstack-upgrade directory', () => {
     setupMockInstall(['qa', 'ship', 'nstack-upgrade']);
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
     run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
@@ -353,17 +157,27 @@ describe('nstack-relink (#578)', () => {
     expect(fs.existsSync(path.join(skillsDir, 'nstack-qa'))).toBe(true);
   });
 
-  // Test 15: nstack-config set skill_prefix triggers relink
-  test('nstack-config set skill_prefix triggers relink', () => {
-    setupMockInstall(['qa', 'ship']);
-    // Run nstack-config set which should auto-trigger relink
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
+  test('only nstack-* entries exist after fresh install', () => {
+    setupMockInstall(['qa', 'ship', 'review', 'plan-ceo-review', 'nstack-upgrade']);
+    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
     });
-    // If relink was triggered, symlinks should exist
-    expect(fs.existsSync(path.join(skillsDir, 'nstack-qa'))).toBe(true);
-    expect(fs.existsSync(path.join(skillsDir, 'nstack-ship'))).toBe(true);
+    const entries = fs.readdirSync(skillsDir);
+    expect(entries.sort()).toEqual([
+      'nstack-plan-ceo-review', 'nstack-qa', 'nstack-review', 'nstack-ship', 'nstack-upgrade',
+    ]);
+    // No unprefixed entries
+    const leaked = entries.filter(e => !e.startsWith('nstack-'));
+    expect(leaked).toEqual([]);
+  });
+
+  test('prints error when install dir missing', () => {
+    const output = run(`${BIN}/nstack-relink`, {
+      NSTACK_INSTALL_DIR: '/nonexistent/path/nstack',
+      NSTACK_SKILLS_DIR: '/nonexistent/path/skills',
+    }, true);
+    expect(output).toContain('setup');
   });
 });
 
@@ -383,8 +197,7 @@ describe('upgrade migrations', () => {
       const stat = fs.statSync(fullPath);
       expect(stat.mode & 0o111).toBeGreaterThan(0);
       // Must parse without syntax errors (bash -n is a syntax check, doesn't execute)
-      const result = execSync(`bash -n "${fullPath}" 2>&1`, { encoding: 'utf-8', timeout: 5000 });
-      // bash -n outputs nothing on success
+      execSync(`bash -n "${fullPath}" 2>&1`, { encoding: 'utf-8', timeout: 5000 });
     }
   });
 
@@ -400,36 +213,34 @@ describe('upgrade migrations', () => {
     expect(content).toContain('nstack-relink');
   });
 
-  test('v0.15.2.0 migration fixes stale directory symlinks', () => {
-    setupMockInstall(['qa', 'ship', 'review']);
-    // Simulate old state: directory symlinks (pre-v0.15.2.0 pattern)
-    fs.symlinkSync(path.join(installDir, 'qa'), path.join(skillsDir, 'qa'));
-    fs.symlinkSync(path.join(installDir, 'ship'), path.join(skillsDir, 'ship'));
-    fs.symlinkSync(path.join(installDir, 'review'), path.join(skillsDir, 'review'));
-    // Set no-prefix mode (suppress auto-relink so symlinks stay intact for the test)
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_SETUP_RUNNING: '1',
-    });
-    // Verify old state: symlinks
-    expect(fs.lstatSync(path.join(skillsDir, 'qa')).isSymbolicLink()).toBe(true);
+  test('v0.17.0.0 migration removes skill_prefix from config', () => {
+    const content = fs.readFileSync(path.join(MIGRATIONS_DIR, 'v0.17.0.0.sh'), 'utf-8');
+    expect(content).toContain('skill_prefix');
+    expect(content).toContain('nstack-relink');
+  });
 
-    // Run the migration (it calls nstack-relink internally)
-    run(`bash ${path.join(MIGRATIONS_DIR, 'v0.15.2.0.sh')}`, {
+  test('v0.17.0.0 migration cleans up skill_prefix from global config', () => {
+    setupMockInstall(['qa', 'ship']);
+    // Create a config with skill_prefix
+    const configDir = path.join(tmpDir, 'config');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'config.yaml'), 'proactive: true\nskill_prefix: false\nauto_upgrade: false\n');
+
+    run(`bash ${path.join(MIGRATIONS_DIR, 'v0.17.0.0.sh')}`, {
+      NSTACK_STATE_DIR: configDir,
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
     });
 
-    // After migration: real directories with SKILL.md symlinks
-    for (const skill of ['qa', 'ship', 'review']) {
-      const skillPath = path.join(skillsDir, skill);
-      expect(fs.lstatSync(skillPath).isSymbolicLink()).toBe(false);
-      expect(fs.lstatSync(skillPath).isDirectory()).toBe(true);
-      expect(fs.lstatSync(path.join(skillPath, 'SKILL.md')).isSymbolicLink()).toBe(true);
-    }
+    // skill_prefix should be removed, other keys preserved
+    const config = fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8');
+    expect(config).not.toContain('skill_prefix');
+    expect(config).toContain('proactive: true');
+    expect(config).toContain('auto_upgrade: false');
   });
 });
 
-describe('nstack-patch-names (#620/#578)', () => {
+describe('nstack-patch-names (always prefixed)', () => {
   // Helper to read name: from SKILL.md frontmatter
   function readSkillName(skillDir: string): string | null {
     const content = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf-8');
@@ -437,12 +248,8 @@ describe('nstack-patch-names (#620/#578)', () => {
     return match ? match[1].trim() : null;
   }
 
-  test('prefix=true patches name: field in SKILL.md', () => {
+  test('patches name: field with nstack- prefix', () => {
     setupMockInstall(['qa', 'ship', 'review']);
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
     run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
@@ -453,38 +260,8 @@ describe('nstack-patch-names (#620/#578)', () => {
     expect(readSkillName(path.join(installDir, 'review'))).toBe('nstack-review');
   });
 
-  test('prefix=false restores name: field in SKILL.md', () => {
-    setupMockInstall(['qa', 'ship']);
-    // First, prefix them
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    expect(readSkillName(path.join(installDir, 'qa'))).toBe('nstack-qa');
-    // Now switch to flat mode
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix false`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
-    // Verify name: field is restored to unprefixed
-    expect(readSkillName(path.join(installDir, 'qa'))).toBe('qa');
-    expect(readSkillName(path.join(installDir, 'ship'))).toBe('ship');
-  });
-
   test('nstack-upgrade name: not double-prefixed', () => {
     setupMockInstall(['qa', 'nstack-upgrade']);
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
     run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
       NSTACK_SKILLS_DIR: skillsDir,
@@ -499,10 +276,6 @@ describe('nstack-patch-names (#620/#578)', () => {
     setupMockInstall(['qa']);
     // Overwrite qa SKILL.md with no frontmatter
     fs.writeFileSync(path.join(installDir, 'qa', 'SKILL.md'), '# qa\nSome content.');
-    run(`${path.join(installDir, 'bin', 'nstack-config')} set skill_prefix true`, {
-      NSTACK_INSTALL_DIR: installDir,
-      NSTACK_SKILLS_DIR: skillsDir,
-    });
     // Should not crash
     run(`${path.join(installDir, 'bin', 'nstack-relink')}`, {
       NSTACK_INSTALL_DIR: installDir,
