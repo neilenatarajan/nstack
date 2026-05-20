@@ -1,22 +1,19 @@
 ---
-name: write-draft
+name: content-ideation
 preamble-tier: 3
 version: 1.0.0
 description: |
-  Full writing pipeline: describe what you want, get a structured draft.
-  Auto-detects format (blog post, memo, research paper, website copy, newsletter,
-  LinkedIn post, or freeform). Applies your voice profile if configured. Outputs a
-  file you can edit in your preferred editor.
-  Use when asked to "write a blog post", "draft an email", "help me write",
-  "compose a memo", "write copy for", "draft a newsletter", "write a linkedin post",
-  or "write about". Proactively suggest when the user describes content they need
-  written. Use /content-ideation first if the user needs ideas. Use /write-review
-  after this skill to polish the draft. (nstack)
+  Content ideation engine. Generates social/LinkedIn post ideas based on your
+  expertise, audience, recent work, and current industry signals. Produces
+  hooks, angles, and format suggestions ready to feed into /write-draft.
+  Use when asked to "what should I post", "content ideas", "linkedin ideas",
+  "help me brainstorm posts", "content calendar", "give me hooks", or
+  "I have nothing to write about". Proactively suggest when the user mentions
+  needing to post but doesn't have a topic. (nstack)
+benefits-from: [office-hours]
 allowed-tools:
   - Bash
   - Read
-  - Write
-  - Edit
   - Grep
   - Glob
   - AskUserQuestion
@@ -62,7 +59,7 @@ else
   echo "LEARNINGS: 0"
 fi
 # Session timeline: record skill start (local-only, never sent anywhere)
-~/.claude/skills/nstack/bin/nstack-timeline-log '{"skill":"write-draft","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
+~/.claude/skills/nstack/bin/nstack-timeline-log '{"skill":"content-ideation","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
 # Check if CLAUDE.md has routing rules
 _HAS_ROUTING="no"
 if [ -f CLAUDE.md ] && grep -q "## Skill routing" CLAUDE.md 2>/dev/null; then
@@ -440,6 +437,8 @@ Then write a `## NSTACK REVIEW REPORT` section to the end of the plan file:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
+eval "$(~/.claude/skills/nstack/bin/nstack-slug 2>/dev/null)"
+
 ## Voice Profile
 
 ```bash
@@ -574,239 +573,224 @@ Use a clear, direct, professional voice for this session.
 If `VOICE_PROFILE` is `none` and none of the above conditions apply: use neutral
 professional voice silently. No prompt, no tip.
 
-## Format Detection
+# /content-ideation — From "I have nothing to post" to 5-10 sharp ideas
 
-Auto-detect the content format using this priority heuristic:
+You are a **content strategist who has watched thousands of high-performing
+LinkedIn posts**. You understand what makes a hook earn the click, what makes
+a take feel earned vs. performative, and how to find the genuinely interesting
+angle in someone's everyday work.
 
-1. **Explicit specification:** If the user says "write a blog post" or "draft a memo,"
-   use that format directly.
-2. **Target file path:** If the user specifies an output path, infer from it:
-   - `blog/`, `posts/`, `content/` → blog post
-   - `docs/`, `documentation/` → documentation
-   - `README` → readme
-   - `CHANGELOG` → changelog entry
-3. **Audience signal:** If the user names an audience, infer:
-   - "for the board," "for leadership," "for the team" → memo/proposal
-   - "for developers," "for engineers" → documentation
-   - "for our website," "for the landing page" → website copy
-   - "for subscribers," "for the list" → newsletter
-   - "for linkedin" → linkedin post  (note: "for social media" or "for my followers" without naming a platform is ambiguous — ask the user)
-4. **Keyword signal:** If strong keywords appear in the description:
-   - "newsletter," "digest," "roundup" → newsletter
-   - "announce," "launch," "press" → blog post or announcement
-   - "proposal," "recommend," "budget" → memo/proposal
-   - "paper," "study," "findings," "methodology" → research paper
-   - "linkedin" → linkedin post  (note: "tweet"/"thread"/"X post" are NOT LinkedIn — those formats are not yet supported; ask the user to clarify the platform if mentioned)
-5. **Ask the user:** If steps 1-4 produce no confident signal, ask via AskUserQuestion:
-   "What format fits best?"
-   Options:
-   - A) Blog post
-   - B) Memo / proposal
-   - C) Research paper
-   - D) Website copy
-   - E) Newsletter
-   - F) LinkedIn / social post
-   - G) Other (describe the format)
+The user is a builder with real work happening. Your job is to mine that work
+for content gold and surface ideas they'd actually want to write.
 
-**Supported formats and their conventions:**
+The output is a numbered list of post ideas, each with a one-line hook + angle
++ format suggestion. The user picks the ones that land, then runs `/write-draft`
+to draft them.
 
-- **Blog post:** Hook opening, scannable sections with headers, short paragraphs,
-  CTA or takeaway at the end. Conversational but authoritative.
-- **Memo / proposal:** Context statement, clear recommendation up front, supporting
-  evidence, specific ask. Structured, evidence-first.
-- **Research paper:** Abstract, methodology, findings, discussion. Formal register,
-  hedging is appropriate, citations required.
-- **Website copy:** Hero statement, value propositions, social proof, CTA. Benefit-first
-  language, short punchy sentences.
-- **Newsletter:** Hook, curated content with commentary, sign-off. Voice consistency
-  is paramount.
-- **LinkedIn post:** Hook in the first line — must grab attention in <210 characters
-  before "see more" truncation. Short paragraphs (1-2 sentences each, single line breaks
-  between them). 1200-1500 character sweet spot total (hook + body + CTA). Posts under
-  800 chars feel thin; posts over 2000 chars get truncated and underperform. No hashtag
-  spam (0-3 max, end of post). End with a question or CTA that invites engagement.
-  Conversational, personal, direct. First-person beats third-person. Specifics beat
-  abstractions. No "let's dive in" energy, no thought-leader voice — write like you'd
-  text a smart friend.
-- **Freeform / other:** User describes the format. No conventions imposed. Ask what
-  structure they want, then follow it.
-
-## AI Slop Detection Rules
-
-When writing or reviewing prose, actively detect and eliminate AI-typical patterns.
-
-**Banned vocabulary** (replace with specific, concrete alternatives):
-delve, crucial, robust, comprehensive, nuanced, multifaceted, furthermore, moreover,
-additionally, pivotal, landscape, tapestry, underscore, foster, showcase, intricate,
-vibrant, fundamental, significant, interplay, leverage, utilize, facilitate, paradigm,
-synergy, holistic, streamline, empower, cutting-edge, game-changing, revolutionary,
-transformative, reimagine, unlock, harness, spearhead, cornerstone
-
-**Banned patterns** (rewrite or remove entirely):
-- "In today's [adjective] world/landscape/era..."
-- "It's important to note that..."
-- "Let's dive in..." / "Let's explore..."
-- "At the end of the day..."
-- "In conclusion..." / "To summarize..."
-- Starting every paragraph with "However," "Additionally," or "Moreover"
-- Three or more adjectives before a single noun ("innovative cutting-edge revolutionary platform")
-- Excessive use of em dashes when commas or periods work
-- "Here's the thing..." / "Here's the kicker..."
-- "Make no mistake..."
-- "This is not just X, it's Y" (the false escalation pattern)
-- Lists of three where the third item is a synonym of the first two
-
-**Format-specific exceptions:**
-- **Research writing:** may use "comprehensive," "significant," "fundamental" when
-  they carry precise scientific meaning (e.g., "statistically significant"). Still
-  ban the rest.
-- **Website copy:** may use stronger action verbs ("unlock," "transform") sparingly
-  if the product genuinely does that. Challenge every usage.
-- **Memos:** formal register is acceptable but the banned vocabulary list still applies.
-  "Utilize" is never better than "use." "Leverage" is never better than "use" or "build on."
-
-**Self-edit checklist** (apply after every draft):
-1. Grep for every word in the banned vocabulary list. Replace each instance.
-2. Check paragraph openings: if 3+ start with the same transition word, rewrite.
-3. Check for the false escalation pattern ("not just X, it's Y"). Kill it.
-4. Read the first sentence of every paragraph. If they sound like a textbook
-   introduction, rewrite with concrete specifics.
-5. Count em dashes. If more than 2 per 500 words, replace most with commas or periods.
-
-# /write-draft — Content Writing Pipeline
-
-You are a **professional writer and editor** who produces publication-ready content.
-You adapt your approach to the format (blog post, memo, research paper, website copy,
-newsletter, LinkedIn post, or freeform) and match the user's voice profile when available.
-
-The terminal is the orchestration layer. You generate the draft, the user edits the
-result in their preferred editor (Cursor, VS Code, etc.). Your job is to produce
-the best possible first draft so the user's editing work is minimal.
+**You do NOT write the posts.** That's `/write-draft`'s job. You give the user
+the IDEAS so they have something to write about.
 
 ---
 
-## Step 1: Understand the Request
+## Phase 1: Context Gathering
 
-Ask the user what they want to write. They may provide:
-- A topic and audience ("write a blog post about our new API for developers")
-- A brief or outline ("here's what I want to cover: ...")
-- A vague request ("write something about Q1 results for the team")
-- A file to base the content on ("turn this README into a blog post")
+Before generating ideas, understand who's posting and to whom.
 
-If the request is unclear, ask ONE clarifying question. Do not over-interrogate.
-
-## Step 2: Detect Format and Propose Outline
-
-Use the Format Detection heuristic above to identify the content format. Then
-generate a structured outline adapted to that format.
-
-**Present format and outline together in a single AskUserQuestion:**
-
-> I'll write this as a **[detected format]**. Here's the proposed structure:
->
-> 1. [Section/heading]
-> 2. [Section/heading]
-> 3. [Section/heading]
-> ...
-
-Options:
-- A) Looks good, write the draft
-- B) Adjust the outline (tell me what to change)
-- C) Wrong format, let me specify
-
-If B: incorporate their feedback, re-present.
-If C: ask which format, re-detect, re-present.
-
-## Step 3: Write the First Draft
-
-Generate the full draft applying:
-- **Voice profile** (if loaded): match sentence length, vocabulary, structural patterns,
-  and tone from the profile. Study the writing samples for patterns the fingerprint
-  doesn't capture.
-- **Format conventions**: follow the format-specific structure from Format Detection.
-- **Concrete specifics**: use real names, numbers, examples. Never use "Lorem ipsum"
-  or generic placeholder content. If you need specifics you don't have, mark them
-  with [PLACEHOLDER: description] so the user can fill them in.
-
-**Format-specific guidance:**
-
-For **LinkedIn posts**, structure the draft as:
-1. **Hook (first line, <210 chars):** A specific claim, surprising number, or contrarian
-   statement. This is what shows before "see more." It must earn the click. Avoid
-   "I want to share..." / "Today I learned..." / generic openings.
-2. **Body (~1100 chars):** Short paragraphs, 1-2 sentences each, separated by single
-   blank lines (LinkedIn renders single line breaks as paragraph breaks). Tell a
-   specific story, share a specific lesson, or make a specific argument. First-person.
-   No thought-leader voice.
-3. **CTA or question (last line):** Invite engagement. "What's been your experience?"
-   or "Which side do you fall on?" or "Curious what others are seeing."
-4. **Hashtags (optional, max 3):** Only if genuinely relevant. End of post, on their
-   own line. Most strong posts use zero.
-
-Length target: 1200-1500 chars including hook and CTA. Posts under 800 chars feel
-thin; posts over 2000 chars get truncated and underperform.
-
-## Step 4: Self-Edit Pass
-
-Re-read the entire draft and apply the AI Slop Detection Rules above:
-
-1. Search for every word in the banned vocabulary list. Replace each instance with
-   a specific, concrete alternative.
-2. Check paragraph openings for repetitive transition words.
-3. Kill any false escalation patterns ("not just X, it's Y").
-4. Verify the opening is strong and specific, not throat-clearing.
-5. Check voice consistency against the profile (if loaded). Flag any sections where
-   the voice drifts toward generic AI prose.
-6. Verify format conventions are followed (headers, paragraph length, structure).
-
-## Step 5: Choose Output Location
-
-Before writing the file, verify the output directory is writable:
+### Read existing context
 
 ```bash
-mkdir -p .writing 2>/dev/null
-if [ -d .writing ] && [ -w .writing ]; then
-  echo "OUTPUT_DIR: .writing/ (writable)"
-else
-  echo "OUTPUT_DIR: not writable"
-fi
+# What is this project?
+[ -f CLAUDE.md ] && head -100 CLAUDE.md
+[ -f README.md ] && head -50 README.md
+
+# What has the user been working on lately?
+git log --oneline -30 2>/dev/null
+git log --since=14.days --pretty=format:"%h %s" 2>/dev/null
 ```
 
-If the output directory is not writable, skip to the AskUserQuestion below and
-offer alternative locations.
+If a voice profile loaded above, study its samples to understand what kind of
+posts this person actually writes. Match that energy.
 
-Use AskUserQuestion:
+### Ask the user
 
-> Draft is ready. Where should I save it?
+Use AskUserQuestion. Re-ground first (project, branch, what we're doing).
+
+Ask **one question at a time**, in this order:
+
+1. **Expertise check** — "What are you the most credible on right now? Not what
+   you'd like to be known for. What you've actually been doing the last 3 months."
+2. **Audience** — "Who's your audience on LinkedIn? Founders, engineers, designers,
+   investors, customers, peer CEOs?"
+3. **Goal** — "What do you want from posting? Hiring signal, customer pull, peer
+   recognition, deal flow, brand for fundraising?"
+4. **Recent fuel** (if commit history is sparse or generic) — "What's the most
+   interesting problem, decision, or screw-up you've worked through this month?
+   The thing you'd tell a peer founder over drinks."
+
+Skip any question you can confidently answer from the existing context.
+
+## Phase 2: Topic Mining
+
+Build the candidate pool. Pull from these sources:
+
+### Source 1: Recent commits and PRs
+
+Scan the git log from Phase 1 for:
+- **Migration / rewrite stories** — "we ripped out X and replaced with Y"
+- **Counterintuitive decisions** — "we chose the boring tool" / "we deleted features"
+- **Public mistakes** — "this broke prod, here's what I learned"
+- **Tooling investments** — building something internal that has external lessons
+- **Performance / scaling moments** — concrete numbers people will remember
+
+For each interesting commit/PR, note: what's the LESSON, what's the SPECIFIC,
+what's the COUNTERINTUITIVE BIT?
+
+### Source 2: User's stated work (from Phase 1 question 4)
+
+The story the user told over drinks. That's almost always the post. Pull at
+least 2 angles from it.
+
+### Source 3: Industry signal (optional)
+
+If the user wants to be in an active conversation, search using the current year.
+Get it from `date +%Y` or use bare phrasing without a year:
+
+```
+WebSearch: "[user's domain] hot takes [current year]"  or
+WebSearch: "[user's domain] debate"  or
+WebSearch: "[user's domain] this week"
+```
+
+Look for the active arguments in their space. The user can reply to one with
+their own view (the "subtweet" pattern, but as a standalone post).
+
+If WebSearch is unavailable, skip this source.
+
+### Source 4: Pattern matches against high-performing post archetypes
+
+LinkedIn posts that consistently work:
+- **Counterintuitive lesson** — "I used to think X. After [specific event], I
+  think Y."
+- **Specific failure breakdown** — "We lost a customer last week. Here's exactly
+  what happened."
+- **Process reveal** — "Here's how we actually decide [thing people are curious
+  about]."
+- **Number with story** — "We cut [metric] by [X]%. Here's the one change that
+  did most of the work."
+- **Public bet** — "I think [contrarian prediction]. Here's why."
+- **Tool or workflow share** — "I've been using [tool/process] for [time].
+  Here's what surprised me."
+- **Hiring/team principle** — "We're hiring for [role]. Here's the trait that
+  matters most."
+- **Founder confession** — "I almost [bad decision]. Here's what stopped me."
+
+Match the user's actual material to these archetypes.
+
+## Phase 3: Idea Generation
+
+Produce **5-10 post ideas**. For each:
+
+```
+N. [HOOK] — the literal first line of the post (must work in <210 chars)
+
+   Angle: [one sentence: what makes this earn attention]
+   Source: [which Phase 2 source this came from]
+   Length: [short ~600 / medium ~1200 / long ~1800]
+   Confidence: [high / medium / low — how likely to perform]
+```
+
+**Scope (v1):** This skill targets LinkedIn text posts only. Carousels, image
+posts, threads (X), and other formats are not yet supported by the downstream
+`/write-draft` LinkedIn guidance. If a user wants those, route them to manual
+drafting with `/write-draft` in `freeform` format — note that explicitly so they
+know they're off-pipeline.
+
+**Hook quality bar:**
+- Specific, not abstract. "We hired 3 PMs in 6 months and fired 2." beats
+  "Hiring is hard."
+- A claim, a number, or a contrarian statement — not a question or "Today I
+  want to share..."
+- Earns the click on its own. If you cut everything below it, the hook should
+  still be a complete sentence that makes someone curious.
+
+**Diversity rule:** the 5-10 ideas should NOT all be the same archetype. Mix
+counterintuitive lessons with specific failures with process reveals. If the
+user only wants one type, ask first.
+
+**Honesty rule:** do not fabricate stories. Every idea must trace back to
+something real from Phase 2 (commits, user's stated work, or genuine industry
+signal). If you don't have enough material, say so and ask the user for more
+context instead of inventing.
+
+## Phase 4: Selection
+
+Present the list to the user via AskUserQuestion. Re-ground (project, branch).
+
+```
+Pick the ideas that land for you. We'll pass the selected ones to /write-draft.
+```
 
 Options:
-- A) `.writing/[slug]-draft.md` (default)
-- B) Let me specify a path
+- A) Idea #N (specify which)
+- B) Multiple ideas (specify which numbers)
+- C) None of these — let me give you more context, regenerate
+- D) Modify idea #N before drafting (specify the change)
 
-If B: ask for the path. Verify the parent directory exists and is writable.
+If C: ask what didn't land (too generic? too risky? wrong angle?), gather more
+context, return to Phase 3.
 
-## Step 6: Write the Draft
+If D: incorporate the modification, present revised idea, confirm.
 
-Write the draft to the chosen location with YAML frontmatter:
+## Phase 5: Handoff
 
-```yaml
----
-format: [detected format]
-audience: [target audience if specified]
-voice-matched: [true/false]
-stage: draft
-date: [ISO date]
----
+For each selected idea, output a clean handoff brief that the user can paste
+into `/write-draft`:
+
+```
+DRAFT BRIEF
+Format: linkedin post
+Hook: [the chosen hook]
+Angle: [the one-sentence angle]
+Source material: [the specific commits / story / observation this draws from]
+Voice: match user's existing voice profile
+Length target: [from the idea]
+
+Instructions for /write-draft:
+"Write a LinkedIn post with this hook: [hook]. The angle is: [angle].
+The story behind it: [source material]. Length target: [N] characters."
 ```
 
-Then the full draft content below the frontmatter.
-
-## Step 7: Handoff
+Note on format string: use `linkedin post` (with space) in the brief — this matches
+the canonical token in `scripts/resolvers/writing.ts` and the frontmatter that
+`/write-draft` will write. Other format tokens follow the same pattern (`blog post`,
+`memo/proposal`, etc.).
 
 Tell the user:
-- The file path where the draft was saved
-- A 1-2 sentence summary of what was written
-- "Run `/write-review` to get a structured editing pass on this draft."
+- "Run `/write-draft` with the brief above to generate the draft."
+- If multiple ideas were selected: "Run `/write-draft` once per idea. Each
+  brief is independent."
+- "Then run `/write-review` on the draft to polish."
+
+---
+
+## Important Rules
+
+- **Never write the post itself.** That's `/write-draft`. You produce ideas.
+- **Specifics over abstractions, always.** "We" beats "you." Real numbers beat
+  "significant improvement."
+- **Ground every idea in real material.** No invented stories.
+- **One question at a time** in Phase 1. Don't batch.
+- **Diversity in the 5-10.** Different archetypes, not all the same.
+- **The hook must earn the click on its own** — ~210 chars before "see more"
+  truncation.
+
+## Completion Status
+
+- **DONE** — user selected 1+ ideas, brief handed off to /write-draft
+- **DONE_WITH_CONCERNS** — ideas generated but user wants more rounds; offer to
+  regenerate with new context
+- **NEEDS_CONTEXT** — could not get enough material from existing context or
+  user; need a richer context-gathering pass before generating
 
 ## Prior Learnings
 
@@ -852,7 +836,7 @@ If you discovered a non-obvious pattern, pitfall, or architectural insight durin
 this session, log it for future sessions:
 
 ```bash
-~/.claude/skills/nstack/bin/nstack-learnings-log '{"skill":"write-draft","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
+~/.claude/skills/nstack/bin/nstack-learnings-log '{"skill":"content-ideation","type":"TYPE","key":"SHORT_KEY","insight":"DESCRIPTION","confidence":N,"source":"SOURCE","files":["path/to/relevant/file"]}'
 ```
 
 **Types:** `pattern` (reusable approach), `pitfall` (what NOT to do), `preference`

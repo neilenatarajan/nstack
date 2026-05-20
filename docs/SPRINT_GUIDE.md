@@ -6,6 +6,8 @@ You describe a product idea. `/office-hours` challenges it. `/autoplan` reviews 
 
 Each skill writes output that the next skill reads. This guide walks through each phase.
 
+> **This is the engineering sprint.** nstack is expanding to other domains. The content/writing pathfinder (`/content-ideation` → `/write-draft` → `/write-review`) is live today. See [ROADMAP.md](../ROADMAP.md) for what's planned and what's live.
+
 ---
 
 ## Think: `/office-hours`
