@@ -10,7 +10,7 @@ const BIN = path.join(ROOT, 'bin');
 let tmpDir: string;
 let slugDir: string;
 
-function runLog(input: string, opts: { expectFail?: boolean } = {}): { stdout: string; exitCode: number } {
+function runLog(input: string, opts: { expectFail?: boolean } = {}): { stdout: string; stderr: string; exitCode: number } {
   const execOpts: ExecSyncOptionsWithStringEncoding = {
     cwd: ROOT,
     env: { ...process.env, NSTACK_HOME: tmpDir },
@@ -19,10 +19,10 @@ function runLog(input: string, opts: { expectFail?: boolean } = {}): { stdout: s
   };
   try {
     const stdout = execSync(`${BIN}/nstack-timeline-log '${input.replace(/'/g, "'\\''")}'`, execOpts).trim();
-    return { stdout, exitCode: 0 };
+    return { stdout, stderr: '', exitCode: 0 };
   } catch (e: any) {
     if (opts.expectFail) {
-      return { stdout: e.stderr?.toString() || '', exitCode: e.status || 1 };
+      return { stdout: '', stderr: e.stderr?.toString() || '', exitCode: e.status || 1 };
     }
     throw e;
   }
@@ -72,9 +72,10 @@ describe('nstack-timeline-log', () => {
     expect(parsed.branch).toBe('main');
   });
 
-  test('rejects invalid JSON with exit 0 (non-blocking)', () => {
-    const result = runLog('not json at all');
-    expect(result.exitCode).toBe(0);
+  test('rejects invalid JSON with exit 1 (loud failure, never silent drop)', () => {
+    const result = runLog('not json at all', { expectFail: true });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('failed shape check');
 
     // No file should be created
     const f = findTimelineFile();
@@ -102,17 +103,19 @@ describe('nstack-timeline-log', () => {
     expect(parsed.ts).toBe('2025-06-15T10:00:00Z');
   });
 
-  test('validates required fields (skill, event) - exits 0 if missing skill', () => {
-    const result = runLog('{"event":"started","branch":"main"}');
-    expect(result.exitCode).toBe(0);
+  test('validates required fields (skill, event) - exits 1 if missing skill', () => {
+    const result = runLog('{"event":"started","branch":"main"}', { expectFail: true });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('missing required field');
 
     const f = findTimelineFile();
     expect(f).toBeNull();
   });
 
-  test('validates required fields (skill, event) - exits 0 if missing event', () => {
-    const result = runLog('{"skill":"review","branch":"main"}');
-    expect(result.exitCode).toBe(0);
+  test('validates required fields (skill, event) - exits 1 if missing event', () => {
+    const result = runLog('{"skill":"review","branch":"main"}', { expectFail: true });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('missing required field');
 
     const f = findTimelineFile();
     expect(f).toBeNull();

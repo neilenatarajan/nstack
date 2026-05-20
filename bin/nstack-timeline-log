@@ -5,7 +5,17 @@
 # Session timeline: local-only, never sent anywhere.
 # Required fields: skill, event (started|completed).
 # Optional: branch, outcome, duration_s, session, ts.
-# Validation failure → skip silently (non-blocking).
+#
+# Validation threat model: protect the JSONL file from being corrupted by
+# malformed input. We check the *shape* of the input (must be a one-line
+# {...} object with no embedded control chars), not full JSON validity.
+# Readers (`nstack-timeline-read`) handle parse errors gracefully. If `jq`
+# is on PATH we use it as a stricter check on top, but it is not required.
+# Required-field check is a substring match — strictly weaker than the
+# prior JS implementation, but acceptable since callers are nstack's own
+# skill templates (not external input).
+#
+# Validation failures fail LOUDLY (exit 1, stderr) — never silently drop.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/nstack-project-dir"
@@ -14,23 +24,68 @@ if [ -z "$_NSTACK_PROJ" ]; then
 fi
 mkdir -p "$_NSTACK_PROJ"
 
-INPUT="$1"
+VALIDATE_FAIL_REASON=
+_validate_json_shape() {
+  local raw="$1"
+  local trimmed="${raw#"${raw%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  if [[ -z "$trimmed" ]]; then VALIDATE_FAIL_REASON=empty; return 1; fi
+  if [[ "${trimmed:0:1}" != "{" || "${trimmed: -1}" != "}" ]]; then
+    VALIDATE_FAIL_REASON=shape; return 1
+  fi
+  if [[ "$raw" == *$'\n'* || "$raw" == *$'\r'* ]]; then
+    VALIDATE_FAIL_REASON=control; return 1
+  fi
+  if [[ "$raw" =~ [[:cntrl:]] ]]; then
+    VALIDATE_FAIL_REASON=control; return 1
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    if ! printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+      VALIDATE_FAIL_REASON=jq; return 1
+    fi
+  fi
+  VALIDATE_FAIL_REASON=
+  return 0
+}
 
-# Validate: input must be parseable JSON with required fields
-if ! printf '%s' "$INPUT" | bun -e "
-  const j = JSON.parse(await Bun.stdin.text());
-  if (!j.skill || !j.event) process.exit(1);
-" 2>/dev/null; then
-  exit 0  # skip silently, non-blocking
+INPUT="$1"
+if ! _validate_json_shape "$INPUT"; then
+  echo "nstack-timeline-log: input failed shape check ($VALIDATE_FAIL_REASON), skipping" >&2
+  exit 1
 fi
 
-# Inject timestamp if not present
-if ! printf '%s' "$INPUT" | bun -e "const j=JSON.parse(await Bun.stdin.text()); if(!j.ts) process.exit(1)" 2>/dev/null; then
-  INPUT=$(printf '%s' "$INPUT" | bun -e "
-    const j = JSON.parse(await Bun.stdin.text());
-    j.ts = new Date().toISOString();
-    console.log(JSON.stringify(j));
-  " 2>/dev/null) || true
+# Required-field check: skill and event must both appear with a colon,
+# AND must not be empty-string or null. Substring match (not key-aware)
+# — see threat-model comment above. Old JS impl rejected falsy values;
+# we preserve that explicitly.
+if [[ ! "$INPUT" == *'"skill"'*':'* ]] || [[ ! "$INPUT" == *'"event"'*':'* ]]; then
+  echo "nstack-timeline-log: missing required field (skill or event), skipping" >&2
+  exit 1
+fi
+# Reject empty or null values for skill/event.
+if [[ "$INPUT" =~ \"skill\"[[:space:]]*:[[:space:]]*\"\" ]] || \
+   [[ "$INPUT" =~ \"event\"[[:space:]]*:[[:space:]]*\"\" ]] || \
+   [[ "$INPUT" =~ \"skill\"[[:space:]]*:[[:space:]]*null ]] || \
+   [[ "$INPUT" =~ \"event\"[[:space:]]*:[[:space:]]*null ]]; then
+  echo "nstack-timeline-log: skill or event is empty/null, skipping" >&2
+  exit 1
+fi
+
+# Inject `ts` if not present as a top-level key. Match `"ts":` anywhere
+# in the input — not anchored to position 1 — so that callers who put
+# `ts` later in the object (e.g., after `skill` and `event`) don't get
+# a duplicate `ts` prepended. False-positive risk (`ts` appearing inside
+# a string value) means we skip injection when we shouldn't; that's
+# strictly safer than producing duplicate keys.
+if [[ ! "$INPUT" =~ \"ts\"[[:space:]]*: ]]; then
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  inp="${INPUT#"${INPUT%%[![:space:]]*}"}"
+  inp="${inp%"${inp##*[![:space:]]}"}"
+  if [[ "$inp" =~ ^\{[[:space:]]*\}$ ]]; then
+    INPUT="{\"ts\":\"$ts\"}"
+  else
+    INPUT="{\"ts\":\"$ts\",${inp#\{}"
+  fi
 fi
 
 echo "$INPUT" >> "$_NSTACK_PROJ/timeline.jsonl"

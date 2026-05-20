@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # nstack-review-log — atomically log a review result
 # Usage: nstack-review-log '{"skill":"...","timestamp":"...","status":"..."}'
+#
+# Validation threat model: protect the JSONL file from being corrupted by
+# malformed input. We check the *shape* of the input (must be a one-line
+# {...} object with no embedded control chars), not full JSON validity.
+# Readers (`nstack-review-read` and friends) handle parse errors gracefully,
+# so bad-but-shaped input is acceptable. If `jq` is on PATH we use it as a
+# stricter check on top, but it is not required.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/nstack-project-dir"
@@ -11,11 +18,33 @@ fi
 eval "$("$SCRIPT_DIR/nstack-slug" 2>/dev/null)"
 mkdir -p "$_NSTACK_PROJ"
 
-# Validate: input must be parseable JSON (reject malformed or injection attempts)
+VALIDATE_FAIL_REASON=
+_validate_json_shape() {
+  local raw="$1"
+  local trimmed="${raw#"${raw%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  if [[ -z "$trimmed" ]]; then VALIDATE_FAIL_REASON=empty; return 1; fi
+  if [[ "${trimmed:0:1}" != "{" || "${trimmed: -1}" != "}" ]]; then
+    VALIDATE_FAIL_REASON=shape; return 1
+  fi
+  if [[ "$raw" == *$'\n'* || "$raw" == *$'\r'* ]]; then
+    VALIDATE_FAIL_REASON=control; return 1
+  fi
+  if [[ "$raw" =~ [[:cntrl:]] ]]; then
+    VALIDATE_FAIL_REASON=control; return 1
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    if ! printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+      VALIDATE_FAIL_REASON=jq; return 1
+    fi
+  fi
+  VALIDATE_FAIL_REASON=
+  return 0
+}
+
 INPUT="$1"
-if ! printf '%s' "$INPUT" | bun -e "JSON.parse(await Bun.stdin.text())" 2>/dev/null; then
-  # Not valid JSON — refuse to append
-  echo "nstack-review-log: invalid JSON, skipping" >&2
+if ! _validate_json_shape "$INPUT"; then
+  echo "nstack-review-log: input failed shape check ($VALIDATE_FAIL_REASON), skipping" >&2
   exit 1
 fi
 

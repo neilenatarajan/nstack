@@ -48,13 +48,20 @@ if [ -z "$BUN_BIN" ]; then
     \{*\}) ;;
     *) echo "nstack-learnings-log: input must be a JSON object (no bun for full validation)" >&2; exit 1 ;;
   esac
-  case "$INPUT" in
-    *'"ts"'*) ;;
-    *)
-      ts_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-      INPUT=$(printf '%s' "$INPUT" | sed "s|}\$|,\"ts\":\"$ts_now\"}|")
-      ;;
-  esac
+  # Inject ts unless it appears anywhere in the input (false-positive risk =
+  # skip injection when we shouldn't, which is safer than producing duplicate keys).
+  if [[ ! "$INPUT" =~ \"ts\"[[:space:]]*: ]]; then
+    ts_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # Trim whitespace, then handle empty-object case specially so we never
+    # emit `{,"ts":"..."}` (malformed JSON).
+    _trim="${INPUT#"${INPUT%%[![:space:]]*}"}"
+    _trim="${_trim%"${_trim##*[![:space:]]}"}"
+    if [[ "$_trim" =~ ^\{[[:space:]]*\}$ ]]; then
+      INPUT="{\"ts\":\"$ts_now\"}"
+    else
+      INPUT="{\"ts\":\"$ts_now\",${_trim#\{}"
+    fi
+  fi
 else
   # Validate: input must be parseable JSON
   if ! printf '%s' "$INPUT" | "$BUN_BIN" -e "JSON.parse(await Bun.stdin.text())" 2>/dev/null; then

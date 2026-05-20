@@ -644,6 +644,15 @@ Shipped as `/careful`, `/freeze`, `/guard`, and `/unfreeze` in v0.6.5. Includes 
 
 Shipped in v0.6.5. TemplateContext in gen-skill-docs.ts bakes skill name into preamble telemetry line. Analytics CLI (`bun run analytics`) for querying. /retro integration shows skills-used-this-week.
 
+### Audit remaining `bun -e` callsites in `bin/`
+
+**What:** Audit the other bash CLIs in `bin/` that shell out to `bun -e` for computation (not just validation): `nstack-team-init`, `nstack-specialist-stats`, `nstack-settings-hook`, `nstack-timeline-read`, `nstack-learnings-search`. Add explicit `command -v bun` checks at script top so they fail with a clear error message if bun is missing, instead of failing later with an opaque downstream error.
+
+**Why:** v0.16.7.0 fixed the bun-on-PATH dependency in the 3 log tools by replacing bun-based validation with pure bash. Other bin/ tools still rely on bun for actual work (jq-like data processing) and can't be converted as easily, but they should at minimum fail with a clear "bun not found, install it from https://bun.sh" message instead of pretending input was malformed.
+
+**Effort:** S (human: ~30 min / CC: ~5 min)
+**Priority:** P1
+
 ### /investigate scoped debugging enhancements (gated on telemetry)
 
 **What:** Six enhancements to /investigate auto-freeze, contingent on telemetry showing the freeze hook actually fires in real debugging sessions.
