@@ -20,14 +20,15 @@ import { EvalCollector } from './helpers/eval-store';
 import { selectTests, detectBaseBranch, getChangedFiles, LLM_JUDGE_TOUCHFILES, GLOBAL_TOUCHFILES } from './helpers/touchfiles';
 
 const ROOT = path.resolve(import.meta.dir, '..');
-// Run when EVALS=1 is set AND ANTHROPIC_API_KEY is available. The Anthropic
-// SDK throws on the first request without a key, so without this gate every
+// Run when EVALS=1 is set AND Anthropic auth is available — either an API
+// key (paid Console billing) or an OAuth token (Claude subscription). The
+// SDK throws on the first request without auth, so without this gate every
 // eval test fails on the call site rather than skipping cleanly.
 const evalsEnabled = !!process.env.EVALS;
-const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+const hasApiKey = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 if (evalsEnabled && !hasApiKey) {
   process.stderr.write(
-    'EVALS=1 set but ANTHROPIC_API_KEY is empty — LLM judge evals will be skipped.\n'
+    'EVALS=1 set but neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is set — LLM judge evals will be skipped.\n'
   );
 }
 const describeEval = (evalsEnabled && hasApiKey) ? describe : describe.skip;

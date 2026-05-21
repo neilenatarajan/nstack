@@ -131,7 +131,11 @@ jobs:
 
       - name: Run ${{ matrix.suite.name }}
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # ANTHROPIC_API_KEY (paid Console key) and ANTHROPIC_AUTH_TOKEN
+          # (Claude subscription OAuth) are mutually exclusive — the SDK
+          # rejects requests if both are set. Prefer OAuth when present.
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           EVALS_CONCURRENCY: "40"

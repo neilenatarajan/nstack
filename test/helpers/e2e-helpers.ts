@@ -68,17 +68,18 @@ if (evalsEnabled && process.env.EVALS_TIER) {
   process.stderr.write(`EVALS_TIER=${tier}: ${selectedTests.length} tests\n\n`);
 }
 
-// Check if Anthropic API key is available. Every E2E test below spawns
-// `claude -p`, so without a key all of them would print "Not logged in" and
-// the assertions would fail. Gate E2E here so CI on forks without the secret
-// (or local dev runs without an `ANTHROPIC_API_KEY` exported) skips cleanly
+// Check if Anthropic auth is available — either an API key (paid Console
+// billing) or an OAuth token (Claude subscription). Every E2E test below
+// spawns `claude -p`, so without auth all of them would print "Not logged
+// in" and the assertions would fail. Gate E2E here so CI on forks without
+// either secret (or local dev runs without auth exported) skips cleanly
 // rather than producing a wall of red.
-export const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+export const hasApiKey = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 
 if (evalsEnabled && !hasApiKey) {
   process.stderr.write(
-    'EVALS=1 set but ANTHROPIC_API_KEY is empty — E2E tests will be skipped.\n' +
-    'Configure ANTHROPIC_API_KEY in CI secrets or export it locally to run them.\n\n'
+    'EVALS=1 set but neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is set — E2E tests will be skipped.\n' +
+    'Configure one of them in CI secrets or export it locally to run E2E.\n\n'
   );
 }
 
