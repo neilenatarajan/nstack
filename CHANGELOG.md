@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.0.1] - 2026-05-22
+
+### For contributors
+
+- **CLAUDE.md documents the Conductor + active-install setup trap.** When you develop nstack and the source repo lives at `~/.claude/skills/nstack/`, Conductor places workspace symlinks at the repo root. Running `./setup` then walks those symlinks as if they were skills, creating phantom top-level skills (`/berlin`, `/brisbane`, etc.) and clobbering the root `SKILL.md` with a symlink into a workspace. The new section explains both failure modes, gives a copy-paste cleanup snippet to run before `./setup`, and points at the proper long-term fix (move the source repo out of `~/.claude/skills/` and symlink it in).
+
 ## [0.17.0.0] - 2026-05-19
 
 ### Added

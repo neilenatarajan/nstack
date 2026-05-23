@@ -441,6 +441,41 @@ Or copy the binaries directly:
 - `cp browse/dist/browse ~/.claude/skills/nstack/browse/dist/browse`
 - `cp design/dist/design ~/.claude/skills/nstack/design/dist/design`
 
+## Conductor + active install: skill discovery trap
+
+When the active install (`~/.claude/skills/nstack/`) IS the nstack source repo AND
+Conductor workspaces of that repo exist at `/Users/neil/code/conductor/workspaces/nstack/<name>/`,
+Conductor places convenience symlinks at the repo root (e.g.
+`~/.claude/skills/nstack/berlin -> /Users/neil/code/conductor/workspaces/nstack/berlin`).
+
+This breaks `./setup` in two ways:
+
+1. **Phantom skills.** `link_claude_skill_dirs` walks `nstack/*/SKILL.md` to discover
+   skills. Each Conductor workspace symlink resolves to a worktree of the repo, which
+   has the root `SKILL.md` — so the workspace gets linked as a top-level skill
+   (`~/.claude/skills/berlin/`, etc.).
+2. **Clobbered root SKILL.md.** The frontmatter on those workspace SKILL.md files is
+   `name: nstack`, so the linker overwrites `~/.claude/skills/nstack/SKILL.md`
+   (a regular file from git) with a symlink into one of the workspaces.
+
+**Before running `./setup` from the active install,** delete the Conductor workspace
+symlinks at the nstack root:
+
+```bash
+cd ~/.claude/skills/nstack
+# remove any symlinks at the repo root that point into the conductor workspaces dir
+for s in */; do
+  [ -L "${s%/}" ] && readlink "${s%/}" | grep -q '/conductor/workspaces/' && rm "${s%/}"
+done
+git checkout SKILL.md  # restore in case a prior run clobbered it with a symlink
+./setup
+```
+
+The proper long-term fix is to move the source repo out of `~/.claude/skills/`
+entirely (e.g. `~/code/nstack/`) and let `./setup` create the
+`~/.claude/skills/nstack -> ~/code/nstack` symlink. Then Conductor workspace
+symlinks live next to the repo, not inside the skill discovery path.
+
 ## Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
